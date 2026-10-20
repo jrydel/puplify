@@ -250,7 +250,8 @@ h2 {
 
 .hero-foot {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The lede keeps a readable measure; the download buttons wrap instead of squeezing it. */
+  grid-template-columns: minmax(20rem, 1fr) minmax(0, max-content);
   gap: 2rem 4rem;
   align-items: end;
   margin-top: clamp(1.25rem, 2.5vw, 2rem);
