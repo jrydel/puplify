@@ -3,6 +3,7 @@
 
 mod autopilot;
 mod recorder;
+mod tray;
 
 use std::future::Future;
 
@@ -16,7 +17,7 @@ use puplify_core::{
     Transcript,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
 use tokio::task::AbortHandle;
@@ -280,7 +281,9 @@ fn main() {
         )
         .init();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        // First, so a second launch only brings the running Puplify forward.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_window(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -294,7 +297,15 @@ fn main() {
                 Err(e) => tracing::warn!("no resource dir; bundled models unavailable: {e}"),
             }
             autopilot::spawn(app.handle().clone());
+            tray::create(app.handle())?;
             Ok(())
+        })
+        // Closing the window keeps Puplify in the tray, so auto-record keeps working.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                tray::hide_to_tray(window);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -326,6 +337,19 @@ fn main() {
             upcoming_meetings,
             test_webhook,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Puplify");
+        .build(tauri::generate_context!())
+        .expect("error while building Puplify");
+
+    app.run(|app, event| match event {
+        // Quitting from the OS (e.g. ⌘Q) saves a running recording first; our own
+        // exit after that carries an exit code and passes through.
+        RunEvent::ExitRequested { code: None, api, .. } => {
+            api.prevent_exit();
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { tray::quit(&app).await });
+        }
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => tray::show_window(app),
+        _ => {}
+    });
 }

@@ -18,6 +18,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::recorder::{self, AppState, Call, Origin};
+use crate::tray;
 
 const TICK: Duration = Duration::from_secs(10);
 const REFRESH: Duration = Duration::from_secs(60);
@@ -180,18 +181,20 @@ impl Pilot {
             AutoRecord::Ask => {
                 *app.state::<AppState>().offered.lock().await = Some(call.clone());
                 let _ = app.emit("call-prompt", call.clone());
-                let (heading, body) = match &call.meeting {
-                    Some(m) => (format!("“{}” has started", m.title), "Open Puplify to record it."),
-                    None => (format!("{} started", call.title), "Your microphone is in use. Open Puplify to record the call."),
+                // The prompt lives in the window, which may be hidden in the tray.
+                tray::show_window(app);
+                let heading = match &call.meeting {
+                    Some(m) => format!("“{}” has started", m.title),
+                    None => format!("{} started", call.title),
                 };
-                notify(app, &heading, body);
+                notify(app, &heading, "Record it? Puplify is asking in its window.");
             }
             AutoRecord::Off => {}
         }
     }
 }
 
-fn notify(app: &AppHandle, title: &str, body: &str) {
+pub(crate) fn notify(app: &AppHandle, title: &str, body: &str) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         tracing::warn!("notification: {e}");
     }

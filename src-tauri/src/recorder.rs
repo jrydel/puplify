@@ -10,8 +10,10 @@ use puplify_core::{
     session::{Recording, SessionEvent},
 };
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Mutex};
+
+use crate::tray;
 
 /// A call the autopilot noticed: another app took the microphone, during an
 /// online meeting from the calendar (`meeting`) or outside any.
@@ -91,23 +93,24 @@ pub async fn start(app: &AppHandle, title: String, origin: Origin) -> Result<Rec
     };
     *guard = Some(Active { recording, origin, last_speech: Instant::now() });
     let _ = app.emit("recording-started", info.clone());
+    tray::refresh(app, Some(&info));
     Ok(info)
 }
 
 /// Stops the active recording, if any, and returns at once; completion and
-/// delivery results arrive as `session` events.
-pub async fn stop(app: &AppHandle) {
-    let Some(active) = app.state::<AppState>().active.lock().await.take() else {
-        return;
-    };
+/// delivery results arrive as `session` events. The returned handle resolves
+/// once the transcript is saved and delivered.
+pub async fn stop(app: &AppHandle) -> Option<JoinHandle<()>> {
+    let active = app.state::<AppState>().active.lock().await.take()?;
     // Lets the UI switch to "finishing" right away, also when the autopilot stopped it.
     let _ = app.emit("recording-stopped", active.recording.transcript_id.clone());
+    tray::refresh(app, None);
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    Some(tauri::async_runtime::spawn(async move {
         if let Err(e) = active.recording.stop().await {
             let _ = app.emit("session", SessionEvent::Error { message: format!("{e:#}") });
         }
-    });
+    }))
 }
 
 pub async fn status(app: &AppHandle) -> Option<RecordingInfo> {

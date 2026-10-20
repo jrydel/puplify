@@ -43,6 +43,11 @@ separate lanes; click any block to jump to that part of the text.
 - **Auto-record**: notices when another app (Zoom, Teams, Meet in the browser) starts using the
   microphone and records the call, or asks first. Online meetings from your calendar (a private
   iCal link, or Google/Outlook when signed in) name the recording and end it on time.
+- **Tray icon**: closing the window keeps Puplify running in the tray (menu bar on macOS), so
+  auto-record keeps working. The tray menu shows whether it's recording (the icon gets a red dot),
+  starts or stops a recording, reopens the window and quits. Quitting during a recording saves it
+  first. On GNOME the tray needs the *AppIndicator and KStatusNotifierItem Support* extension
+  (Ubuntu ships it); without it, launch Puplify again to bring the window back.
 - **CLI** (`puplify`): works without the GUI and is scriptable.
 
 ## Requirements
