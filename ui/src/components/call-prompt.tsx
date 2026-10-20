@@ -8,35 +8,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { Meeting } from "@/lib/api";
+import type { Call } from "@/lib/api";
+import { CALENDAR_NAME } from "@/lib/format";
 
-const PROVIDER: Record<Meeting["provider"], string> = { google: "Google Calendar", microsoft: "Outlook" };
-
-/** Ask mode: the calendar meeting has started and the user joined the call. */
-export function MeetingPrompt({
-  meeting,
+/** Ask mode: the user joined a call, from the calendar or not. */
+export function CallPrompt({
+  call,
   onRecord,
   onDismiss,
 }: {
-  meeting: Meeting | null;
+  call: Call | null;
   onRecord: () => void;
   onDismiss: () => void;
 }) {
   return (
-    <AlertDialog open={!!meeting} onOpenChange={(open) => !open && onDismiss()}>
+    <AlertDialog open={!!call} onOpenChange={(open) => !open && onDismiss()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Record “{meeting?.title}”?</AlertDialogTitle>
+          <AlertDialogTitle>Record “{call?.title}”?</AlertDialogTitle>
           <AlertDialogDescription>
-            This meeting from {meeting ? PROVIDER[meeting.provider] : "your calendar"} has started and your microphone
-            is in use. Recording stops when you leave the call.
+            {call?.meeting
+              ? `This meeting from ${CALENDAR_NAME[call.meeting.provider]} has started and your microphone is in use.`
+              : `${call?.app ?? "Another app"} is using your microphone, so you seem to be in a call.`}{" "}
+            Recording stops when you leave the call.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Not this one</AlertDialogCancel>
           <AlertDialogAction onClick={onRecord}>
             <span className="size-2.5 rounded-full bg-tally" aria-hidden />
-            Record meeting
+            Record call
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

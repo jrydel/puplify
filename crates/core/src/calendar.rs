@@ -1,6 +1,9 @@
-//! Online meetings from the connected Google and Microsoft calendars. The
-//! desktop app combines this with microphone activity to start recordings
-//! automatically.
+//! Online meetings from the connected Google and Microsoft calendars and from
+//! private iCal links. The desktop app combines this with microphone activity to
+//! start recordings automatically.
+
+mod ical;
+mod windows_zones;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, NaiveDateTime, SecondsFormat, Utc};
@@ -20,6 +23,7 @@ const GOOGLE_EVENTS: &str = "https://www.googleapis.com/calendar/v3/calendars/pr
 pub enum CalendarProvider {
     Google,
     Microsoft,
+    Ical,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -34,9 +38,10 @@ pub struct Meeting {
 }
 
 /// Online meetings (`join_url` is `Some`) overlapping `[now - 1 h, now + ahead]`
-/// from every enabled and connected calendar, excluding cancelled,
-/// declined-by-me and all-day events, sorted by start. Provider failures become
-/// warnings so one broken account does not hide the other calendar.
+/// from every enabled and connected calendar and every configured iCal link,
+/// excluding cancelled, declined-by-me and all-day events, sorted by start.
+/// Provider failures become warnings so one broken account does not hide the
+/// other calendars.
 pub async fn upcoming(cfg: &Config, ahead: Duration) -> (Vec<Meeting>, Vec<String>) {
     // Development aid: lets the autopilot be exercised without real calendar
     // accounts. Compiled out of release builds.
@@ -70,7 +75,15 @@ pub async fn upcoming(cfg: &Config, ahead: Duration) -> (Vec<Meeting>, Vec<Strin
             Err(e) => Err(e),
         })
     };
-    let (google, microsoft) = futures_util::future::join(google, microsoft).await;
+    let links = futures_util::future::join_all(
+        cfg.calendar
+            .links
+            .iter()
+            .enumerate()
+            .filter(|(_, address)| !address.trim().is_empty())
+            .map(|(index, address)| fetch_ical(&client, index, address.trim(), from, to)),
+    );
+    let (google, microsoft, links) = futures_util::future::join3(google, microsoft, links).await;
 
     let mut meetings = Vec::new();
     let mut warnings = Vec::new();
@@ -81,7 +94,14 @@ pub async fn upcoming(cfg: &Config, ahead: Duration) -> (Vec<Meeting>, Vec<Strin
             None => {}
         }
     }
+    for result in links {
+        match result {
+            Ok(found) => meetings.extend(found),
+            Err(warning) => warnings.push(warning),
+        }
+    }
     meetings.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| a.id.cmp(&b.id)));
+    meetings.dedup_by(|a, b| a.id == b.id);
     (meetings, warnings)
 }
 
@@ -172,6 +192,59 @@ async fn fetch_microsoft(client: &reqwest::Client, from: DateTime<Utc>, to: Date
     }
     let body: Value = resp.json().await.context("unexpected Microsoft Graph response")?;
     Ok(graph_meetings(&body))
+}
+
+/// One private iCal link. Private links embed a secret, so neither the
+/// address nor its path appears in the returned warning, only `Calendar link N (host)`.
+async fn fetch_ical(
+    client: &reqwest::Client,
+    index: usize,
+    address: &str,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> Result<Vec<Meeting>, String> {
+    let (url, label) = ical_target(index, address)?;
+    let ics = download_ical(client, &url).await.map_err(|why| format!("{label}: {why}"))?;
+    Ok(ical::meetings(&ics, index, rrule::Tz::LOCAL, from, to))
+}
+
+/// The `https://` URL to fetch for a configured address (`webcal://` is `https://`
+/// by convention) and the secret-free label naming it in warnings.
+fn ical_target(index: usize, address: &str) -> Result<(String, String), String> {
+    let label = format!("Calendar link {}", index + 1);
+    let url = match address.split_once("://") {
+        Some((scheme, rest))
+            if (scheme.eq_ignore_ascii_case("https") || scheme.eq_ignore_ascii_case("webcal")) && !rest.starts_with('/') =>
+        {
+            format!("https://{rest}")
+        }
+        _ => return Err(format!("{label}: the address must start with https:// or webcal://")),
+    };
+    let host = reqwest::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_owned));
+    match host {
+        Some(host) => Ok((url, format!("{label} ({host})"))),
+        None => Err(format!("{label}: not a valid address")),
+    }
+}
+
+/// Body of the feed; the error is a short reason that never contains the URL.
+async fn download_ical(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    let describe = |e: reqwest::Error| {
+        let e = e.without_url();
+        let mut text = e.to_string();
+        let mut source = std::error::Error::source(&e);
+        while let Some(cause) = source {
+            text.push_str(&format!(": {cause}"));
+            source = cause.source();
+        }
+        text
+    };
+    let resp = client.get(url).send().await.map_err(describe)?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status().as_u16()));
+    }
+    let bytes = resp.bytes().await.map_err(describe)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// Maps a Google Calendar `events.list` response to online meetings.
@@ -493,6 +566,47 @@ mod tests {
         assert_eq!(v["provider"], "google");
         assert_eq!(v["join_url"], "https://meet.google.com/abc-defg-hij");
         assert_eq!(v["start"], "2026-10-20T10:00:00Z");
+    }
+
+    #[test]
+    fn ical_links_become_https_and_labels_hide_the_secret() {
+        let (url, label) = ical_target(1, "webcal://calendar.google.com/calendar/ical/me%40x.com/private-0a1b2c/basic.ics").unwrap();
+        assert_eq!(url, "https://calendar.google.com/calendar/ical/me%40x.com/private-0a1b2c/basic.ics");
+        assert_eq!(label, "Calendar link 2 (calendar.google.com)");
+        let (url, _) = ical_target(0, "HTTPS://outlook.office365.com/owa/calendar/abc@x.com/def/calendar.ics").unwrap();
+        assert!(url.starts_with("https://outlook.office365.com/"));
+        for bad in ["http://example.com/secret.ics", "ftp://example.com/secret.ics", "example.com/secret.ics", "https:///secret.ics"] {
+            let warning = ical_target(2, bad).unwrap_err();
+            assert!(warning.starts_with("Calendar link 3: "), "{warning}");
+            assert!(!warning.contains("secret"), "{warning}");
+        }
+    }
+
+    #[tokio::test]
+    async fn failing_ical_links_warn_without_the_secret_url() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n").await;
+            }
+        });
+        let client = http().unwrap();
+
+        let not_found = download_ical(&client, &format!("http://127.0.0.1:{port}/private-s3cret/basic.ics")).await.unwrap_err();
+        assert_eq!(not_found, "HTTP 404");
+
+        // Nothing listens on port 1: the transport error must not echo the URL either.
+        let refused = download_ical(&client, "http://127.0.0.1:1/private-s3cret/basic.ics").await.unwrap_err();
+        assert!(!refused.contains("s3cret") && !refused.contains("127.0.0.1"), "{refused}");
+
+        let (_, label) = ical_target(1, "webcal://calendar.google.com/private-s3cret/basic.ics").unwrap();
+        let warning = format!("{label}: {not_found}");
+        assert_eq!(warning, "Calendar link 2 (calendar.google.com): HTTP 404");
     }
 
     #[tokio::test]

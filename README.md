@@ -34,11 +34,15 @@ separate lanes; click any block to jump to that part of the text.
   - Google Drive: same formats, into a folder in My Drive.
   - Dropbox: same formats, into a Dropbox folder.
   - Notion: one page per transcript under a page you choose.
-  - Local folder: same formats, e.g. a synced folder or an Obsidian vault.
+  - Local folder: same formats, e.g. an Obsidian vault or the folder of the OneDrive, Dropbox or
+    Google Drive desktop app, which then uploads it with no sign-in in Puplify.
   - Webhooks: `recording.started`, live `transcript.segment`, and `recording.completed` with the
     full text. HMAC-signed.
 - **Local history**: every transcript is saved as JSON in the data directory and autosaved during
   recording.
+- **Auto-record**: notices when another app (Zoom, Teams, Meet in the browser) starts using the
+  microphone and records the call, or asks first. Online meetings from your calendar (a private
+  iCal link, or Google/Outlook when signed in) name the recording and end it on time.
 - **CLI** (`puplify`): works without the GUI and is scriptable.
 
 ## Requirements
@@ -139,10 +143,10 @@ Accelerate framework; the `metal` feature currently fails to link (missing clang
    - **Deepgram**: paste an API key from <https://console.deepgram.com>.
 2. **Audio**: keep both sources on. Wear headphones if you can; otherwise the mic also picks up the
    other people from your speakers, and their words show up twice (once as Me).
-3. **Accounts, Destinations, Calendar**: connect the accounts you use in **Settings → Accounts**,
-   turn on where finished transcripts should go in **Settings → Destinations**, and optionally
-   enable [calendar auto-recording](#calendar-auto-recording) in **Settings → Calendar** (details
-   for each below).
+3. **Destinations, Auto-record**: turn on where finished transcripts should go in **Settings →
+   Destinations**, and pick how calls are handled in **Settings → Auto-record** (see
+   [Auto-record](#auto-record)). Builds that ship Puplify's app registrations also have **Settings →
+   Accounts** for one-click Microsoft, Google and Dropbox sign-in (details for each below).
 4. Click **New recording → Start recording**. The meters show both sources are live. Click
    **Stop** when the meeting ends; the transcript is saved and then sent to every destination.
 
@@ -159,7 +163,7 @@ URL and tries to open it). Puplify requests `Files.ReadWrite`, `Calendars.Read`,
 
 To upload transcripts: **Settings → Destinations → OneDrive** → turn it on, choose a folder
 (default `Transcripts`) and file formats, then **Save changes**. To use the calendar, see
-[Calendar auto-recording](#calendar-auto-recording).
+[Auto-record](#auto-record).
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending replaces the existing file. Tokens are
 stored in `microsoft-token.json` in the config directory (mode 0600) and refresh automatically.
@@ -176,7 +180,7 @@ and files it creates, never the rest of your Drive. For the calendar it requests
 
 To upload transcripts: **Settings → Destinations → Google Drive** → turn it on, choose a folder
 name (default `Transcripts`, created in My Drive on first use) and file formats, then **Save
-changes**. To use the calendar, see [Calendar auto-recording](#calendar-auto-recording).
+changes**. To use the calendar, see [Auto-record](#auto-record).
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending updates the existing file instead of adding
 a copy. Tokens are stored in `google-token.json` in the config directory (mode 0600) and refresh
@@ -241,23 +245,35 @@ Registering the three apps (all free):
 verification, users see an "unverified app" warning and at most 100 users can sign in. The privacy
 policy for the consent screen is at <https://puplify.com/privacy>.
 
-## Calendar auto-recording
+## Auto-record
 
-Puplify can start recording by itself when you join an online meeting.
+Puplify can start recording by itself when you join a call. Open **Settings → Auto-record**.
 
-1. Connect an account (**Settings → Accounts**, see the Microsoft and Google setup above).
-2. Open **Settings → Calendar** and turn on **Outlook calendar** and/or **Google Calendar**.
-3. Choose the mode: **Record automatically** (default) starts recording without asking, **Ask me**
-   shows a prompt first, **Off** disables the feature. **Check now** lists the online meetings it
-   sees in the next 12 hours.
+**Record calls** (default **Ask me**): when another application starts using the microphone, you
+have probably joined a call. **Record automatically** starts recording with a notification, **Ask
+me** shows a notification and a prompt first, **Off** ignores calls. Without a calendar event the
+recording is called e.g. "Call in Firefox" (the app name as the OS reports it).
 
-**Start:** an online meeting (an event with a Google Meet, Zoom, Teams or Webex link) is in
-progress on an enabled calendar **and** another application is using the microphone, i.e. you
-joined the call. Cancelled, declined and all-day events are ignored.
+**Meetings from your calendar** (default **Record automatically**): when the call is an online
+meeting (an event with a Google Meet, Zoom, Teams or Webex link) under way on a watched calendar,
+that setting applies instead, and the recording takes the event's title. Cancelled, declined and
+all-day events are ignored. Calendars to watch:
 
-**Stop:** when the meeting app releases the microphone (Linux and Windows), or when the event has
-ended and a minute has passed without speech (macOS, and on every OS as a fallback). macOS only
-reports that some process uses the default input, so Puplify's own capture can't be told apart.
+- **Calendar links** (no sign-in): paste a calendar's private iCal address. Google Calendar:
+  Settings → your calendar → Integrate calendar → *Secret address in iCal format*. Outlook:
+  Settings → Calendar → Shared calendars → Publish a calendar → the *ICS* link. Anyone holding the
+  link can read the calendar, so treat it like a password. Google and Microsoft refresh these feeds
+  with some delay, so a meeting created minutes ago may not show yet, and work accounts may have
+  publishing disabled by an admin.
+- **Outlook calendar / Google Calendar**: in builds with Puplify's app registrations, after
+  connecting the account in **Settings → Accounts**.
+
+**Check now** lists the online meetings Puplify sees in the next 12 hours.
+
+**Stop:** when the meeting app releases the microphone for 45 seconds (Linux and Windows). For a
+calendar meeting also once the event has ended and a minute has passed without speech; for other
+calls after 5 minutes without speech. macOS only reports that some process uses the default
+input, so Puplify's own capture can't be told apart and the silence rules are what stops it there.
 
 Recording other people may require their consent where you live; make sure participants know.
 

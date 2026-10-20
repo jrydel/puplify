@@ -81,7 +81,7 @@ pub fn builtin_accounts() -> BuiltinAccounts {
     }
 }
 
-/// What to do when an online meeting is in progress and another app starts using the microphone.
+/// What to do when a call starts: record it, ask first, or nothing.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AutoRecord {
@@ -91,15 +91,27 @@ pub enum AutoRecord {
     Auto,
 }
 
-/// Calendar-driven recording: which calendars to watch and how to react.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+/// Automatic recording: which calendars to watch and how to react when
+/// another app starts using the microphone.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct CalendarConfig {
+    /// For an online meeting from a watched calendar that is under way.
     pub mode: AutoRecord,
+    /// For any other call (no matching calendar event).
+    pub calls: AutoRecord,
     /// Watch the connected Google calendar.
     pub google: bool,
     /// Watch the connected Microsoft calendar.
     pub microsoft: bool,
+    /// Private iCal addresses (`https://` or `webcal://`) of calendars to watch, no sign-in needed.
+    pub links: Vec<String>,
+}
+
+impl Default for CalendarConfig {
+    fn default() -> Self {
+        Self { mode: AutoRecord::Auto, calls: AutoRecord::Ask, google: false, microsoft: false, links: Vec::new() }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

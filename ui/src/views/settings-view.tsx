@@ -34,6 +34,7 @@ import {
   api,
   errorText,
   onModelProgress,
+  type AutoRecord,
   type BuiltinAccounts,
   type CalendarSnapshot,
   type Config,
@@ -43,7 +44,7 @@ import {
   type ModelStatus,
   type WebhookEvent,
 } from "@/lib/api";
-import { timeOfDay } from "@/lib/format";
+import { CALENDAR_NAME, timeOfDay } from "@/lib/format";
 
 /** Radix Select can't use "" as a value; this stands for "use the default device". */
 const DEFAULT_DEVICE = "__default";
@@ -120,6 +121,9 @@ export function SettingsView({ onSaved }: { onSaved: (config: Config) => void })
     }
   }
 
+  /** Builds without Puplify's app registrations can't sign in anywhere, so the tab would be empty. */
+  const hasAccounts = builtin.microsoft || builtin.google || builtin.dropbox;
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-24">
       <h1 className="font-heading text-3xl font-semibold tracking-tight">Settings</h1>
@@ -127,9 +131,9 @@ export function SettingsView({ onSaved }: { onSaved: (config: Config) => void })
         <TabsList>
           <TabsTrigger value="transcription">Transcription</TabsTrigger>
           <TabsTrigger value="audio">Audio</TabsTrigger>
-          <TabsTrigger value="accounts">Accounts</TabsTrigger>
+          {hasAccounts && <TabsTrigger value="accounts">Accounts</TabsTrigger>}
           <TabsTrigger value="destinations">Destinations</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="calendar">Auto-record</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
         </TabsList>
 
@@ -143,10 +147,10 @@ export function SettingsView({ onSaved }: { onSaved: (config: Config) => void })
           <AccountsTab accounts={accounts} builtin={builtin} refreshAccounts={refreshAccounts} />
         </TabsContent>
         <TabsContent value="destinations" className="pt-4">
-          <DestinationsTab draft={draft} edit={edit} accounts={accounts} />
+          <DestinationsTab draft={draft} edit={edit} accounts={accounts} builtin={builtin} />
         </TabsContent>
         <TabsContent value="calendar" className="pt-4">
-          <CalendarTab draft={draft} edit={edit} accounts={accounts} save={save} />
+          <CalendarTab draft={draft} edit={edit} accounts={accounts} builtin={builtin} save={save} />
         </TabsContent>
         <TabsContent value="webhooks" className="pt-4">
           <WebhooksTab draft={draft} edit={edit} save={save} />
@@ -686,7 +690,17 @@ function DestinationCard({
   );
 }
 
-function DestinationsTab({ draft, edit, accounts }: { draft: Config; edit: Edit; accounts: Accounts }) {
+function DestinationsTab({
+  draft,
+  edit,
+  accounts,
+  builtin,
+}: {
+  draft: Config;
+  edit: Edit;
+  accounts: Accounts;
+  builtin: BuiltinAccounts;
+}) {
   const c = draft.connectors;
   return (
     <div className="flex flex-col gap-4">
@@ -695,73 +709,104 @@ function DestinationsTab({ draft, edit, accounts }: { draft: Config; edit: Edit;
       </p>
 
       <DestinationCard
-        brand="onedrive"
-        title="OneDrive"
-        description="Saved to a folder in your OneDrive."
-        enabled={c.onedrive.enabled}
-        onEnabled={(v) => edit((d) => (d.connectors.onedrive.enabled = v))}
-        needsAccount={accounts.microsoft ? null : "Microsoft"}
+        brand="folder"
+        title="Folder on this computer"
+        description="Pick your OneDrive, Dropbox or Google Drive folder and their app uploads transcripts for you."
+        enabled={c.folder.enabled}
+        onEnabled={(v) => edit((d) => (d.connectors.folder.enabled = v))}
       >
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="od-folder">Folder</FieldLabel>
+            <FieldLabel htmlFor="fd-path">Folder path</FieldLabel>
             <Input
-              id="od-folder"
-              value={c.onedrive.folder}
-              onChange={(e) => edit((d) => (d.connectors.onedrive.folder = e.target.value))}
+              id="fd-path"
+              className="font-mono"
+              value={c.folder.path}
+              onChange={(e) => edit((d) => (d.connectors.folder.path = e.target.value))}
+              placeholder="/home/you/Documents/Meetings"
             />
           </Field>
-          <FormatPicker
-            value={c.onedrive.formats}
-            onChange={(v) => edit((d) => (d.connectors.onedrive.formats = v))}
-          />
+          <FormatPicker value={c.folder.formats} onChange={(v) => edit((d) => (d.connectors.folder.formats = v))} />
         </FieldGroup>
       </DestinationCard>
 
-      <DestinationCard
-        brand="googledrive"
-        title="Google Drive"
-        description="Saved to a folder in My Drive."
-        enabled={c.google_drive.enabled}
-        onEnabled={(v) => edit((d) => (d.connectors.google_drive.enabled = v))}
-        needsAccount={accounts.google ? null : "Google"}
-      >
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="gd-folder">Folder</FieldLabel>
-            <Input
-              id="gd-folder"
-              value={c.google_drive.folder}
-              onChange={(e) => edit((d) => (d.connectors.google_drive.folder = e.target.value))}
+      {builtin.microsoft && (
+        <DestinationCard
+          brand="onedrive"
+          title="OneDrive"
+          description="Saved to a folder in your OneDrive."
+          enabled={c.onedrive.enabled}
+          onEnabled={(v) => edit((d) => (d.connectors.onedrive.enabled = v))}
+          needsAccount={accounts.microsoft ? null : "Microsoft"}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="od-folder">Folder</FieldLabel>
+              <Input
+                id="od-folder"
+                value={c.onedrive.folder}
+                onChange={(e) => edit((d) => (d.connectors.onedrive.folder = e.target.value))}
+              />
+            </Field>
+            <FormatPicker
+              value={c.onedrive.formats}
+              onChange={(v) => edit((d) => (d.connectors.onedrive.formats = v))}
             />
-          </Field>
-          <FormatPicker
-            value={c.google_drive.formats}
-            onChange={(v) => edit((d) => (d.connectors.google_drive.formats = v))}
-          />
-        </FieldGroup>
-      </DestinationCard>
+          </FieldGroup>
+        </DestinationCard>
+      )}
 
-      <DestinationCard
-        brand="dropbox"
-        title="Dropbox"
-        description="Saved to a folder in your Dropbox."
-        enabled={c.dropbox.enabled}
-        onEnabled={(v) => edit((d) => (d.connectors.dropbox.enabled = v))}
-        needsAccount={accounts.dropbox ? null : "Dropbox"}
-      >
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="db-folder">Folder</FieldLabel>
-            <Input
-              id="db-folder"
-              value={c.dropbox.folder}
-              onChange={(e) => edit((d) => (d.connectors.dropbox.folder = e.target.value))}
+      {builtin.google && (
+        <DestinationCard
+          brand="googledrive"
+          title="Google Drive"
+          description="Saved to a folder in My Drive."
+          enabled={c.google_drive.enabled}
+          onEnabled={(v) => edit((d) => (d.connectors.google_drive.enabled = v))}
+          needsAccount={accounts.google ? null : "Google"}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="gd-folder">Folder</FieldLabel>
+              <Input
+                id="gd-folder"
+                value={c.google_drive.folder}
+                onChange={(e) => edit((d) => (d.connectors.google_drive.folder = e.target.value))}
+              />
+            </Field>
+            <FormatPicker
+              value={c.google_drive.formats}
+              onChange={(v) => edit((d) => (d.connectors.google_drive.formats = v))}
             />
-          </Field>
-          <FormatPicker value={c.dropbox.formats} onChange={(v) => edit((d) => (d.connectors.dropbox.formats = v))} />
-        </FieldGroup>
-      </DestinationCard>
+          </FieldGroup>
+        </DestinationCard>
+      )}
+
+      {builtin.dropbox && (
+        <DestinationCard
+          brand="dropbox"
+          title="Dropbox"
+          description="Saved to a folder in your Dropbox."
+          enabled={c.dropbox.enabled}
+          onEnabled={(v) => edit((d) => (d.connectors.dropbox.enabled = v))}
+          needsAccount={accounts.dropbox ? null : "Dropbox"}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="db-folder">Folder</FieldLabel>
+              <Input
+                id="db-folder"
+                value={c.dropbox.folder}
+                onChange={(e) => edit((d) => (d.connectors.dropbox.folder = e.target.value))}
+              />
+            </Field>
+            <FormatPicker
+              value={c.dropbox.formats}
+              onChange={(v) => edit((d) => (d.connectors.dropbox.formats = v))}
+            />
+          </FieldGroup>
+        </DestinationCard>
+      )}
 
       <DestinationCard
         brand="notion"
@@ -792,43 +837,45 @@ function DestinationsTab({ draft, edit, accounts }: { draft: Config; edit: Edit;
           </Field>
         </FieldGroup>
       </DestinationCard>
-
-      <DestinationCard
-        brand="folder"
-        title="Folder on this computer"
-        description="A synced folder or a notes vault works well."
-        enabled={c.folder.enabled}
-        onEnabled={(v) => edit((d) => (d.connectors.folder.enabled = v))}
-      >
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="fd-path">Folder path</FieldLabel>
-            <Input
-              id="fd-path"
-              className="font-mono"
-              value={c.folder.path}
-              onChange={(e) => edit((d) => (d.connectors.folder.path = e.target.value))}
-              placeholder="/home/you/Documents/Meetings"
-            />
-          </Field>
-          <FormatPicker value={c.folder.formats} onChange={(v) => edit((d) => (d.connectors.folder.formats = v))} />
-        </FieldGroup>
-      </DestinationCard>
     </div>
   );
 }
 
 /* ---------------- Calendar ---------------- */
 
+function AutoRecordPicker({ value, onChange }: { value: AutoRecord; onChange: (v: AutoRecord) => void }) {
+  return (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      value={value}
+      onValueChange={(v) => v && onChange(v as AutoRecord)}
+      className="justify-start"
+    >
+      <ToggleGroupItem value="auto">Record automatically</ToggleGroupItem>
+      <ToggleGroupItem value="ask">Ask me</ToggleGroupItem>
+      <ToggleGroupItem value="off">Off</ToggleGroupItem>
+    </ToggleGroup>
+  );
+}
+
+const AUTO_RECORD_HINT: Record<AutoRecord, string> = {
+  auto: "Recording starts by itself, with a notification, and stops when you leave the call.",
+  ask: "A notification and a prompt in Puplify ask before each recording.",
+  off: "Nothing happens.",
+};
+
 function CalendarTab({
   draft,
   edit,
   accounts,
+  builtin,
   save,
 }: {
   draft: Config;
   edit: Edit;
   accounts: Accounts;
+  builtin: BuiltinAccounts;
   save: () => Promise<boolean>;
 }) {
   const cal = draft.calendar;
@@ -847,41 +894,43 @@ function CalendarTab({
     }
   }
 
-  const sources: { key: "microsoft" | "google"; brand: Brand; title: string; account: string | null; needs: string }[] = [
-    { key: "microsoft", brand: "outlook", title: "Outlook calendar", account: accounts.microsoft, needs: "Microsoft" },
-    { key: "google", brand: "googlecalendar", title: "Google Calendar", account: accounts.google, needs: "Google" },
-  ];
+  // Sign-in calendars appear only in builds that ship the provider's app registration.
+  const sources = (
+    [
+      { key: "microsoft", brand: "outlook", title: "Outlook calendar", account: accounts.microsoft, needs: "Microsoft" },
+      { key: "google", brand: "googlecalendar", title: "Google Calendar", account: accounts.google, needs: "Google" },
+    ] as const
+  ).filter((s) => builtin[s.key]);
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Record meetings from your calendar</CardTitle>
+          <CardTitle>Record calls</CardTitle>
           <CardDescription>
-            When a calendar event with a video link (Meet, Teams, Zoom, Webex) is under way and another app starts
-            using your microphone, you've joined the call.
+            When another app (Zoom, Teams, Meet in your browser) starts using your microphone, you've probably joined
+            a call.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            value={cal.mode}
-            onValueChange={(v) => v && edit((c) => (c.calendar.mode = v as Config["calendar"]["mode"]))}
-            className="justify-start"
-          >
-            <ToggleGroupItem value="auto">Record automatically</ToggleGroupItem>
-            <ToggleGroupItem value="ask">Ask me</ToggleGroupItem>
-            <ToggleGroupItem value="off">Off</ToggleGroupItem>
-          </ToggleGroup>
+          <AutoRecordPicker value={cal.calls} onChange={(v) => edit((c) => (c.calendar.calls = v))} />
           <FieldDescription>
-            {cal.mode === "auto"
-              ? "Recording starts by itself, with a notification, and stops when you leave the call."
-              : cal.mode === "ask"
-                ? "A notification and a prompt in Puplify ask before each recording."
-                : "Calendars are not read."}{" "}
-            Recording other people may require their consent.
+            {AUTO_RECORD_HINT[cal.calls]} Recording other people may require their consent.
           </FieldDescription>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Meetings from your calendar</CardTitle>
+          <CardDescription>
+            When the call is a calendar event with a video link (Meet, Teams, Zoom, Webex), the recording is named after
+            it and also stops once the meeting is over.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <AutoRecordPicker value={cal.mode} onChange={(v) => edit((c) => (c.calendar.mode = v))} />
+          <FieldDescription>{cal.mode === "off" ? "Calendars are not read." : AUTO_RECORD_HINT[cal.mode]}</FieldDescription>
         </CardContent>
       </Card>
 
@@ -906,9 +955,51 @@ function CalendarTab({
       ))}
 
       <Card size="sm">
+        <ConnectorHeader
+          brand="link"
+          title="Calendar links"
+          description="A calendar's private iCal address. No sign-in needed."
+          action={
+            <Button variant="outline" size="sm" onClick={() => edit((c) => c.calendar.links.push(""))}>
+              <PlusIcon data-icon="inline-start" />
+              Add link
+            </Button>
+          }
+        />
+        <CardContent className="flex flex-col gap-3">
+          {cal.links.map((link, i) => (
+            <div key={i} className="flex gap-2">
+              <Input
+                className="font-mono"
+                type="password"
+                autoComplete="off"
+                value={link}
+                onChange={(e) => edit((c) => (c.calendar.links[i] = e.target.value))}
+                placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+                aria-label={`Calendar link ${i + 1}`}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => edit((c) => c.calendar.links.splice(i, 1))}
+                aria-label={`Remove calendar link ${i + 1}`}
+              >
+                <Trash2Icon />
+              </Button>
+            </div>
+          ))}
+          <FieldDescription>
+            Google Calendar: Settings → your calendar → Integrate calendar → <em>Secret address in iCal format</em>.
+            Outlook: Settings → Calendar → Shared calendars → Publish a calendar → <em>ICS</em> link. Anyone with the
+            link can see your events, so keep it private. Changes can take a few hours to show up.
+          </FieldDescription>
+        </CardContent>
+      </Card>
+
+      <Card size="sm">
         <CardHeader>
           <CardTitle>Upcoming online meetings</CardTitle>
-          <CardDescription>Next 12 hours from the calendars turned on above.</CardDescription>
+          <CardDescription>Next 12 hours from your calendars.</CardDescription>
           <CardAction>
             <Button variant="outline" size="sm" onClick={check} disabled={checking || cal.mode === "off"}>
               {checking ? <Spinner data-icon="inline-start" /> : <RefreshCwIcon data-icon="inline-start" />}
@@ -925,9 +1016,7 @@ function CalendarTab({
                   {timeOfDay(new Date(m.start))}–{timeOfDay(new Date(m.end))}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-medium">{m.title}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {m.provider === "google" ? "Google" : "Outlook"}
-                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">{CALENDAR_NAME[m.provider]}</span>
               </div>
             ))}
             {snapshot.warnings.map((w) => (

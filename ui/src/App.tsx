@@ -2,18 +2,18 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { MeetingPrompt } from "@/components/meeting-prompt";
+import { CallPrompt } from "@/components/call-prompt";
 import {
   api,
   errorText,
   onCalendar,
-  onMeetingPrompt,
+  onCallPrompt,
   onRecordingStarted,
   onRecordingStopped,
   onSession,
   type CalendarSnapshot,
   type Config,
-  type Meeting,
+  type Call,
   type RecordingInfo,
   type TranscriptSummary,
 } from "@/lib/api";
@@ -29,7 +29,7 @@ export default function App() {
   const [history, setHistory] = useState<TranscriptSummary[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
   const [calendar, setCalendar] = useState<CalendarSnapshot | null>(null);
-  const [offer, setOffer] = useState<Meeting | null>(null);
+  const [offer, setOffer] = useState<Call | null>(null);
   const [session, dispatch] = useReducer(sessionReducer, initialSession);
   const current = useRef(session);
   current.current = session;
@@ -48,12 +48,13 @@ export default function App() {
       transcriptId: info.transcript_id,
       title: info.title,
       startedAt: Date.now(),
-      meeting: info.meeting,
+      call: info.call,
     });
   }, []);
 
   const refreshCalendar = useCallback((cfg: Config) => {
-    const enabled = cfg.calendar.mode !== "off" && (cfg.calendar.google || cfg.calendar.microsoft);
+    const c = cfg.calendar;
+    const enabled = c.mode !== "off" && (c.google || c.microsoft || c.links.some((l) => l.trim()));
     if (!enabled) return setCalendar(null);
     api.upcomingMeetings().then(setCalendar).catch((e) => toast.error(errorText(e)));
   }, []);
@@ -86,13 +87,13 @@ export default function App() {
         follow(info);
         refreshHistory();
         setOffer(null);
-        if (info.meeting) toast.info(`Recording “${info.title}” from your calendar`);
+        if (info.call) toast.info(`Recording “${info.title}”`);
       }),
       onRecordingStopped((id) => {
         const s = current.current;
         if (s.phase === "recording" && s.transcriptId === id) dispatch({ type: "stopping" });
       }),
-      onMeetingPrompt(setOffer),
+      onCallPrompt(setOffer),
       onCalendar(setCalendar),
     ];
     return () => {
@@ -176,12 +177,12 @@ export default function App() {
           />
         )}
       </main>
-      <MeetingPrompt
-        meeting={offer}
+      <CallPrompt
+        call={offer}
         onRecord={async () => {
           setOffer(null);
           try {
-            follow(await api.recordOfferedMeeting());
+            follow(await api.recordOfferedCall());
             setView({ kind: "record" });
           } catch (e) {
             toast.error(errorText(e));
@@ -189,7 +190,7 @@ export default function App() {
         }}
         onDismiss={() => {
           setOffer(null);
-          api.dismissOfferedMeeting().catch(() => {});
+          api.dismissOfferedCall().catch(() => {});
         }}
       />
     </div>

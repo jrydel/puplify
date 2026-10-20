@@ -61,7 +61,7 @@ export interface Config {
     whisper: { model: string; language: string; threads: number };
     deepgram: { api_key: string; model: string; language: string };
   };
-  calendar: { mode: AutoRecord; google: boolean; microsoft: boolean };
+  calendar: { mode: AutoRecord; calls: AutoRecord; google: boolean; microsoft: boolean; links: string[] };
   connectors: {
     folder: { enabled: boolean; path: string; formats: ExportFormat[] };
     onedrive: { enabled: boolean; folder: string; formats: ExportFormat[] };
@@ -80,7 +80,7 @@ export interface Meeting {
   start: string;
   end: string;
   join_url: string | null;
-  provider: "google" | "microsoft";
+  provider: "google" | "microsoft" | "ical";
 }
 
 export interface CalendarSnapshot {
@@ -88,10 +88,19 @@ export interface CalendarSnapshot {
   warnings: string[];
 }
 
+/** A call the autopilot noticed: another app took the microphone, during a calendar meeting or not. */
+export interface Call {
+  title: string;
+  meeting: Meeting | null;
+  /** App holding the microphone, when the OS names it. */
+  app: string | null;
+}
+
 export interface RecordingInfo {
   transcript_id: string;
   title: string;
-  meeting: Meeting | null;
+  /** Set when the autopilot (or its Ask prompt) started the recording. */
+  call: Call | null;
 }
 
 export interface DeviceInfo {
@@ -138,8 +147,8 @@ export const api = {
   listDevices: () => invoke<DeviceInfo[]>("list_devices"),
   recordingStatus: () => invoke<RecordingInfo | null>("recording_status"),
   startRecording: (title: string) => invoke<RecordingInfo>("start_recording", { title }),
-  recordOfferedMeeting: () => invoke<RecordingInfo>("record_offered_meeting"),
-  dismissOfferedMeeting: () => invoke<void>("dismiss_offered_meeting"),
+  recordOfferedCall: () => invoke<RecordingInfo>("record_offered_call"),
+  dismissOfferedCall: () => invoke<void>("dismiss_offered_call"),
   stopRecording: () => invoke<void>("stop_recording"),
   listTranscripts: () => invoke<TranscriptSummary[]>("list_transcripts"),
   getTranscript: (id: string) => invoke<{ transcript: Transcript; text: string }>("get_transcript", { id }),
@@ -183,9 +192,9 @@ export function onRecordingStopped(handler: (transcriptId: string) => void): Pro
   return listen<string>("recording-stopped", (e) => handler(e.payload));
 }
 
-/** Ask mode: a calendar meeting started and the user joined it. */
-export function onMeetingPrompt(handler: (meeting: Meeting) => void): Promise<UnlistenFn> {
-  return listen<Meeting>("meeting-prompt", (e) => handler(e.payload));
+/** Ask mode: the user joined a call (a calendar meeting or any other). */
+export function onCallPrompt(handler: (call: Call) => void): Promise<UnlistenFn> {
+  return listen<Call>("call-prompt", (e) => handler(e.payload));
 }
 
 export function onCalendar(handler: (snapshot: CalendarSnapshot) => void): Promise<UnlistenFn> {

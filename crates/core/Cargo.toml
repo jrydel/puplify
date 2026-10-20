@@ -24,6 +24,8 @@ sha2 = "0.10"
 hex = "0.4"
 urlencoding = "2"
 base64 = "0.22"
+rrule = "0.14.0"
+chrono-tz = "0.10.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libpulse-binding = "2"

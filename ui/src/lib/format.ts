@@ -1,4 +1,11 @@
-import type { Segment, Speaker } from "./api";
+import type { Meeting, Segment, Speaker } from "./api";
+
+/** Where a meeting came from, for "From …" lines. */
+export const CALENDAR_NAME: Record<Meeting["provider"], string> = {
+  google: "Google Calendar",
+  microsoft: "Outlook",
+  ical: "your calendar link",
+};
 
 export function fmtTs(ms: number): string {
   const s = Math.floor(ms / 1000);

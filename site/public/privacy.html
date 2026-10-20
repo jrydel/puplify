@@ -43,6 +43,7 @@
         <li><strong>Sign-in tokens</strong> for the services you connect, stored in Puplify's settings folder (readable only by your user on Linux and macOS). Disconnecting an account deletes its token.</li>
       </ul>
       <p>Audio is processed while you record and is not kept. With the default local engine, nothing about a recording leaves your computer unless you turn on a destination.</p>
+      <p>To notice calls, Puplify checks every few seconds whether another app is using your microphone, and which one, as reported by your operating system. It does not listen to the microphone for this, and the result never leaves your computer.</p>
 
       <h2>When data leaves your computer</h2>
       <p>Only where you send it:</p>
@@ -50,6 +51,7 @@
         <li><strong>Destinations you turn on</strong> (OneDrive, Google Drive, Dropbox, Notion, a folder, a webhook) receive finished transcripts, directly from your computer.</li>
         <li><strong>Cloud transcription</strong> (Deepgram, off by default) receives the meeting audio while you record, under Deepgram's own privacy policy.</li>
         <li><strong>Model downloads</strong> fetch speech models from Hugging Face when you choose to download one.</li>
+        <li><strong>Calendar links</strong> you add are downloaded every minute, directly from the server they point to (usually Google or Microsoft), to read upcoming meetings. Nothing is sent back.</li>
       </ul>
 
       <h2>Connected accounts</h2>

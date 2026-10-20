@@ -103,16 +103,16 @@ async fn start_recording(app: AppHandle, title: String) -> CmdResult<RecordingIn
     recorder::start(&app, title, Origin::Manual).await.map_err(anyhow_err)
 }
 
-/// Starts recording the meeting the autopilot offered in Ask mode, so it
+/// Starts recording the call the autopilot offered in Ask mode, so it
 /// stops automatically like an automatic recording.
 #[tauri::command]
-async fn record_offered_meeting(app: AppHandle, state: State<'_, AppState>) -> CmdResult<RecordingInfo> {
-    let meeting = state.offered.lock().await.take().ok_or("that meeting is no longer on offer")?;
-    recorder::start(&app, meeting.title.clone(), Origin::Calendar(meeting)).await.map_err(anyhow_err)
+async fn record_offered_call(app: AppHandle, state: State<'_, AppState>) -> CmdResult<RecordingInfo> {
+    let call = state.offered.lock().await.take().ok_or("that call is no longer on offer")?;
+    recorder::start(&app, call.title.clone(), Origin::Call(call)).await.map_err(anyhow_err)
 }
 
 #[tauri::command]
-async fn dismiss_offered_meeting(state: State<'_, AppState>) -> CmdResult<()> {
+async fn dismiss_offered_call(state: State<'_, AppState>) -> CmdResult<()> {
     state.offered.lock().await.take();
     Ok(())
 }
@@ -300,8 +300,8 @@ fn main() {
             list_devices,
             recording_status,
             start_recording,
-            record_offered_meeting,
-            dismiss_offered_meeting,
+            record_offered_call,
+            dismiss_offered_call,
             stop_recording,
             list_transcripts,
             get_transcript,

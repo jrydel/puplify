@@ -1,6 +1,8 @@
-//! Calendar autopilot: starts a recording when an online meeting from the
-//! user's calendar is in progress and another app is using the microphone
-//! (they joined the call), and stops it when they leave or the meeting is over.
+//! Autopilot: notices when another app starts using the microphone (the user
+//! joined a call) and records it, or asks first. Online meetings from the
+//! watched calendars give the recording its title and scheduled end; other
+//! calls are handled by their own setting. Recordings stop when the user
+//! leaves the call, the meeting is over, or nobody has spoken for a while.
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -15,7 +17,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::recorder::{self, AppState, Origin};
+use crate::recorder::{self, AppState, Call, Origin};
 
 const TICK: Duration = Duration::from_secs(10);
 const REFRESH: Duration = Duration::from_secs(60);
@@ -29,6 +31,9 @@ const LEFT_CALL_AFTER: Duration = Duration::from_secs(45);
 const QUIET_AFTER_END: Duration = Duration::from_secs(60);
 /// …and in any case this long after the scheduled end.
 const HARD_STOP_AFTER_END: chrono::Duration = chrono::Duration::minutes(15);
+/// A call without a calendar event stops after this long without speech; the
+/// only stop signal on macOS, where our own capture keeps the mic "in use".
+const CALL_QUIET: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Serialize)]
 pub struct CalendarSnapshot {
@@ -52,6 +57,9 @@ struct Pilot {
     fetched: Option<Instant>,
     /// Meetings already started, offered or skipped; never acted on twice.
     handled: HashSet<String>,
+    /// The current spell of microphone use was already recorded, offered or
+    /// skipped; cleared once the mic is free again.
+    call_handled: bool,
     /// Since when the meeting app has released the mic during our recording.
     released_since: Option<Instant>,
 }
@@ -59,13 +67,13 @@ struct Pilot {
 impl Pilot {
     async fn tick(&mut self, app: &AppHandle) {
         let Ok(cfg) = Config::load() else { return };
-        let enabled = cfg.calendar.mode != AutoRecord::Off && (cfg.calendar.google || cfg.calendar.microsoft);
-        if !enabled {
+        let c = &cfg.calendar;
+        let watch_calendar = c.mode != AutoRecord::Off
+            && (c.google || c.microsoft || c.links.iter().any(|l| !l.trim().is_empty()));
+        if !watch_calendar {
             self.meetings.clear();
             self.fetched = None;
-            return;
-        }
-        if self.fetched.is_none_or(|t| t.elapsed() >= REFRESH) {
+        } else if self.fetched.is_none_or(|t| t.elapsed() >= REFRESH) {
             let (meetings, warnings) = calendar::upcoming(&cfg, chrono::Duration::hours(AHEAD_HOURS)).await;
             for w in &warnings {
                 tracing::warn!("calendar: {w}");
@@ -83,6 +91,9 @@ impl Pilot {
             }
             Err(_) => return,
         };
+        if !mic.in_use {
+            self.call_handled = false;
+        }
 
         if self.maybe_stop(app, &mic).await {
             return;
@@ -98,10 +109,13 @@ impl Pilot {
             self.released_since = None;
             return false;
         };
-        let Origin::Calendar(meeting) = &active.origin else {
+        // Whatever is recording covers the call in progress; don't offer it again afterwards.
+        if mic.in_use {
+            self.call_handled = true;
+        }
+        let Origin::Call(call) = &active.origin else {
             return true; // manual recordings are the user's to stop
         };
-        let now = Utc::now();
         // Only meaningful where our own capture is excluded from the reading.
         let left_call = mic.ignores_self
             && if mic.in_use {
@@ -110,19 +124,25 @@ impl Pilot {
             } else {
                 self.released_since.get_or_insert_with(Instant::now).elapsed() >= LEFT_CALL_AFTER
             };
-        let over = now > meeting.end
-            && (active.last_speech.elapsed() >= QUIET_AFTER_END || now > meeting.end + HARD_STOP_AFTER_END);
+        let quiet = active.last_speech.elapsed();
+        let over = match &call.meeting {
+            Some(meeting) => {
+                let now = Utc::now();
+                now > meeting.end && (quiet >= QUIET_AFTER_END || now > meeting.end + HARD_STOP_AFTER_END)
+            }
+            None => quiet >= CALL_QUIET,
+        };
         tracing::debug!(
             in_use = mic.in_use,
             apps = ?mic.apps,
             released_for = ?self.released_since.map(|t| t.elapsed()),
             over,
-            "autopilot: recording from calendar"
+            "autopilot: recording a call"
         );
         if !(left_call || over) {
             return true;
         }
-        let title = meeting.title.clone();
+        let title = call.title.clone();
         drop(guard);
         self.released_since = None;
         recorder::stop(app).await;
@@ -135,26 +155,36 @@ impl Pilot {
             return;
         }
         let now = Utc::now();
-        let Some(meeting) = self
-            .meetings
-            .iter()
-            .find(|m| m.start - EARLY_JOIN <= now && now < m.end && !self.handled.contains(&m.id))
-            .cloned()
-        else {
-            return;
-        };
-        self.handled.insert(meeting.id.clone());
-        match cfg.calendar.mode {
-            AutoRecord::Auto => {
-                match recorder::start(app, meeting.title.clone(), Origin::Calendar(meeting.clone())).await {
-                    Ok(_) => notify(app, "Recording started", &format!("“{}”: Puplify is transcribing.", meeting.title)),
-                    Err(e) => notify(app, "Couldn't start recording", &format!("“{}”: {e:#}", meeting.title)),
-                }
+        let app_name = mic.apps.first().cloned();
+        let mut current = self.meetings.iter().filter(|m| m.start - EARLY_JOIN <= now && now < m.end);
+        let (call, mode) = match current.clone().find(|m| !self.handled.contains(&m.id)) {
+            Some(meeting) => {
+                self.handled.insert(meeting.id.clone());
+                let call = Call { title: meeting.title.clone(), meeting: Some(meeting.clone()), app: app_name };
+                (call, cfg.calendar.mode)
             }
+            // A meeting under way was already dealt with; this is the same call.
+            None if current.next().is_some() => return,
+            None if self.call_handled => return,
+            None => {
+                let title = app_name.as_deref().map_or_else(|| "Call".to_string(), |a| format!("Call in {a}"));
+                (Call { title, meeting: None, app: app_name }, cfg.calendar.calls)
+            }
+        };
+        self.call_handled = true;
+        match mode {
+            AutoRecord::Auto => match recorder::start(app, call.title.clone(), Origin::Call(call.clone())).await {
+                Ok(_) => notify(app, "Recording started", &format!("“{}”: Puplify is transcribing.", call.title)),
+                Err(e) => notify(app, "Couldn't start recording", &format!("“{}”: {e:#}", call.title)),
+            },
             AutoRecord::Ask => {
-                *app.state::<AppState>().offered.lock().await = Some(meeting.clone());
-                let _ = app.emit("meeting-prompt", meeting.clone());
-                notify(app, &format!("“{}” has started", meeting.title), "Open Puplify to record it.");
+                *app.state::<AppState>().offered.lock().await = Some(call.clone());
+                let _ = app.emit("call-prompt", call.clone());
+                let (heading, body) = match &call.meeting {
+                    Some(m) => (format!("“{}” has started", m.title), "Open Puplify to record it."),
+                    None => (format!("{} started", call.title), "Your microphone is in use. Open Puplify to record the call."),
+                };
+                notify(app, &heading, body);
             }
             AutoRecord::Off => {}
         }

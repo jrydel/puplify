@@ -10,8 +10,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import type { CalendarSnapshot, Config, Meeting } from "@/lib/api";
-import { fmtTs, timeOfDay } from "@/lib/format";
+import type { CalendarSnapshot, Config } from "@/lib/api";
+import { CALENDAR_NAME, fmtTs, timeOfDay } from "@/lib/format";
 import type { SessionState } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
@@ -25,8 +25,6 @@ interface RecorderViewProps {
   onOpenTranscript: (id: string) => void;
   onOpenSettings: () => void;
 }
-
-const PROVIDER: Record<Meeting["provider"], string> = { google: "Google Calendar", microsoft: "Outlook" };
 
 /** The next (or current) online meeting from the connected calendars. */
 function NextMeeting({ calendar, config }: { calendar: CalendarSnapshot; config: Config }) {
@@ -45,7 +43,7 @@ function NextMeeting({ calendar, config }: { calendar: CalendarSnapshot; config:
         {next ? (
           <CardDescription>
             <span className="font-medium text-foreground">{next.title}</span> · {timeOfDay(new Date(next.start))}–
-            {timeOfDay(new Date(next.end))} · {PROVIDER[next.provider]}. {behaviour}
+            {timeOfDay(new Date(next.end))} · {CALENDAR_NAME[next.provider]}. {behaviour}
           </CardDescription>
         ) : (
           <CardDescription>Puplify watches your calendar for meetings with a video link.</CardDescription>
@@ -197,10 +195,13 @@ function LivePanel({ session, config, onStop, onNew, onOpenTranscript }: Recorde
         <div className="flex items-center gap-4">
           <div className="flex min-w-0 flex-1 flex-col">
             <h1 className="truncate font-heading text-2xl font-semibold tracking-tight">{session.title}</h1>
-            {session.meeting && (
+            {session.call && (
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <CalendarClockIcon className="size-3.5" aria-hidden />
-                From {PROVIDER[session.meeting.provider]} · stops when you leave the call
+                {session.call.meeting
+                  ? `From ${CALENDAR_NAME[session.call.meeting.provider]}`
+                  : `Started when ${session.call.app ?? "another app"} began using your microphone`}{" "}
+                · stops when you leave the call
               </p>
             )}
           </div>

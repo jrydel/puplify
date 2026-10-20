@@ -1,4 +1,4 @@
-//! The single active recording, shared by the UI commands and the calendar
+//! The single active recording, shared by the UI commands and the
 //! autopilot so both start and stop recordings the same way.
 
 use std::time::Instant;
@@ -13,11 +13,30 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Mutex};
 
+/// A call the autopilot noticed: another app took the microphone, during an
+/// online meeting from the calendar (`meeting`) or outside any.
+#[derive(Debug, Clone, Serialize)]
+pub struct Call {
+    pub title: String,
+    pub meeting: Option<Meeting>,
+    /// App holding the microphone, when the OS names it.
+    pub app: Option<String>,
+}
+
 /// Why a recording was started.
 pub enum Origin {
     Manual,
-    /// Started by the autopilot for this calendar meeting.
-    Calendar(Meeting),
+    /// Started by the autopilot (or from its Ask prompt) for this call.
+    Call(Call),
+}
+
+impl Origin {
+    fn call(&self) -> Option<Call> {
+        match self {
+            Origin::Call(call) => Some(call.clone()),
+            Origin::Manual => None,
+        }
+    }
 }
 
 pub struct Active {
@@ -31,16 +50,16 @@ pub struct Active {
 #[derive(Default)]
 pub struct AppState {
     pub active: Mutex<Option<Active>>,
-    /// Meeting the autopilot offered to record in Ask mode.
-    pub offered: Mutex<Option<Meeting>>,
+    /// Call the autopilot offered to record in Ask mode.
+    pub offered: Mutex<Option<Call>>,
 }
 
 #[derive(Clone, Serialize)]
 pub struct RecordingInfo {
     pub transcript_id: String,
     pub title: String,
-    /// Calendar meeting that triggered the recording, if any.
-    pub meeting: Option<Meeting>,
+    /// Call that triggered the recording automatically, if any.
+    pub call: Option<Call>,
 }
 
 /// Starts recording unless one is already running. Emits `recording-started`
@@ -68,10 +87,7 @@ pub async fn start(app: &AppHandle, title: String, origin: Origin) -> Result<Rec
     let info = RecordingInfo {
         transcript_id: recording.transcript_id.clone(),
         title: recording.title.clone(),
-        meeting: match &origin {
-            Origin::Calendar(m) => Some(m.clone()),
-            Origin::Manual => None,
-        },
+        call: origin.call(),
     };
     *guard = Some(Active { recording, origin, last_speech: Instant::now() });
     let _ = app.emit("recording-started", info.clone());
@@ -100,9 +116,6 @@ pub async fn status(app: &AppHandle) -> Option<RecordingInfo> {
     guard.as_ref().map(|a| RecordingInfo {
         transcript_id: a.recording.transcript_id.clone(),
         title: a.recording.title.clone(),
-        meeting: match &a.origin {
-            Origin::Calendar(m) => Some(m.clone()),
-            Origin::Manual => None,
-        },
+        call: a.origin.call(),
     })
 }
