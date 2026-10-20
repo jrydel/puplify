@@ -79,6 +79,15 @@ The macOS `.dmg` is ad-hoc signed, not notarized. If you install it by hand, run
 Security → Open Anyway**). Intel Macs: build from source. The Windows installer is unsigned, so
 SmartScreen asks for confirmation (**More info → Run anyway**).
 
+### Updates
+
+Puplify checks GitHub Releases at start-up and every 6 hours. When a new version is out, the
+sidebar shows **Update and restart**; one click downloads it, verifies its signature and restarts
+into the new version. It waits while a recording is running or being saved. The version in the
+sidebar's bottom corner checks on demand. deb and rpm installs ask for your password, since the
+package manager installs the update. Versions before 0.5.0 have no updater: install 0.5.0 by hand
+once.
+
 ### Signed and notarized macOS releases
 
 The release workflow signs with a Developer ID and notarizes automatically once these repository
@@ -93,6 +102,14 @@ keeps macOS permissions across updates. It needs a paid Apple Developer account.
 | `APPLE_ID` | Apple ID email of the developer account |
 | `APPLE_PASSWORD` | App-specific password from <https://account.apple.com> |
 | `APPLE_TEAM_ID` | 10-character team ID |
+
+### Update signing
+
+Updates are signed with a minisign key; its public half is in `src-tauri/tauri.conf.json`
+(`plugins.updater.pubkey`). The private key (no password) is the repository secret
+`TAURI_SIGNING_PRIVATE_KEY`, and the maintainer keeps a backup outside GitHub. Losing it means
+installed copies can never verify another update. The release workflow signs every bundle, and the
+`publish` job writes `latest.json` (`scripts/updater-manifest.ts`) before un-drafting the release.
 
 ## Build dependencies
 

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { SearchIcon, Settings2Icon } from "lucide-react";
 
+import { UpdateCard } from "@/components/update-card";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
 import type { TranscriptSummary } from "@/lib/api";
 import { dayLabel, fmtDuration } from "@/lib/format";
 import type { Phase } from "@/lib/session";
+import { useUpdater } from "@/lib/updater";
 import { cn } from "@/lib/utils";
 
 interface AppSidebarProps {
@@ -23,6 +26,7 @@ interface AppSidebarProps {
 export function AppSidebar({ history, selectedId, liveId, phase, settingsOpen, onRecord, onSelect, onSettings }: AppSidebarProps) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
+  const updater = useUpdater();
   const visible = q ? history.filter((t) => t.title.toLowerCase().includes(q)) : history;
 
   const groups: { day: string; items: TranscriptSummary[] }[] = [];
@@ -105,15 +109,29 @@ export function AppSidebar({ history, selectedId, liveId, phase, settingsOpen, o
         </nav>
       </ScrollArea>
 
-      <div className="border-t border-sidebar-border p-3">
+      <UpdateCard state={updater.state} recording={phase !== "idle" && phase !== "done"} onInstall={updater.install} />
+
+      <div className="flex items-center gap-1 border-t border-sidebar-border p-3">
         <Button
           variant="ghost"
-          className={cn("w-full justify-start", settingsOpen && "bg-sidebar-accent")}
+          className={cn("flex-1 justify-start", settingsOpen && "bg-sidebar-accent")}
           onClick={onSettings}
         >
           <Settings2Icon data-icon="inline-start" />
           Settings
         </Button>
+        {updater.version && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="font-mono text-xs text-muted-foreground"
+            onClick={updater.check}
+            disabled={updater.state.phase === "checking"}
+            title="Check for updates"
+          >
+            {updater.state.phase === "checking" && <Spinner data-icon="inline-start" />}v{updater.version}
+          </Button>
+        )}
       </div>
     </aside>
   );
