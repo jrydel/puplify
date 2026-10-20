@@ -45,22 +45,50 @@ function findAsset(release: GitHubRelease, platform: Platform): GitHubAsset | un
   return undefined;
 }
 
+const USER_AGENT = "puplify-site (+https://puplify.com)";
+
 async function fetchLatestRelease(): Promise<ReleaseLookup> {
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": "puplify-site (+https://puplify.com)",
+        "User-Agent": USER_AGENT,
         "X-GitHub-Api-Version": "2022-11-28",
       },
     });
     if (res.status === 404) return { release: null };
-    if (!res.ok) return { error: true };
+    // Unauthenticated API calls from shared Cloudflare egress IPs regularly hit
+    // GitHub's per-IP rate limit (403/429); the public release page has no such quota.
+    if (!res.ok) return await fetchFromReleasePage();
     const json = (await res.json()) as GitHubRelease;
     return { release: { tag_name: json.tag_name, published_at: json.published_at, assets: json.assets ?? [] } };
   } catch {
-    return { error: true };
+    return fetchFromReleasePage().catch(() => ({ error: true }) as const);
   }
+}
+
+/** GitHub's release page prints sizes in binary units labelled KB/MB/GB. */
+const SIZE_UNITS: Record<string, number> = { Bytes: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3 };
+
+/** Reads the latest release from github.com's HTML instead of the REST API. */
+async function fetchFromReleasePage(): Promise<ReleaseLookup> {
+  const latest = await fetch(`${RELEASES_URL}/latest`, { redirect: "manual", headers: { "User-Agent": USER_AGENT } });
+  const tag = latest.headers.get("Location")?.match(/\/releases\/tag\/([^/?#]+)$/)?.[1];
+  // With no release, /releases/latest redirects to /releases itself.
+  if (!tag) return latest.status >= 300 && latest.status < 400 ? { release: null } : { error: true };
+  const page = await fetch(`${RELEASES_URL}/expanded_assets/${tag}`, { headers: { "User-Agent": USER_AGENT } });
+  if (!page.ok) return { error: true };
+  const html = await page.text();
+  const assets: GitHubAsset[] = [];
+  const entry = /href="\/[^"]+\/releases\/download\/[^/"]+\/([^"]+)"[\s\S]*?([\d.]+)\s*(Bytes|KB|MB|GB)\b/g;
+  for (const [, file, amount, unit] of html.matchAll(entry)) {
+    assets.push({
+      name: decodeURIComponent(file),
+      size: Math.round(Number.parseFloat(amount) * SIZE_UNITS[unit]),
+      browser_download_url: `${RELEASES_URL}/download/${tag}/${file}`,
+    });
+  }
+  return { release: { tag_name: decodeURIComponent(tag), published_at: null, assets } };
 }
 
 /** Latest release via the edge cache (~5 min; failures are remembered for 30 s). */
