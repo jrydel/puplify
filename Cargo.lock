@@ -3514,7 +3514,7 @@ dependencies = [
 
 [[package]]
 name = "puplify-app"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3535,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "puplify-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3548,7 +3548,7 @@ dependencies = [
 
 [[package]]
 name = "puplify-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
