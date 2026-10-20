@@ -24,7 +24,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::{AudioMsg, DeviceInfo, SAMPLE_RATE};
 use crate::transcript::Speaker;
 
-const APP_NAME: &str = "Verbatim";
+const APP_NAME: &str = "Puplify";
 /// Samples per read; 100 ms keeps stop latency and live-transcription delay low.
 const CHUNK: usize = SAMPLE_RATE as usize / 10;
 

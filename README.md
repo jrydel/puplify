@@ -1,8 +1,12 @@
-# Verbatim
+# Puplify
 
-Desktop meeting transcriber for **Linux and macOS**. It records your microphone and the meeting's
-system audio, transcribes both live, and sends the full text transcript wherever you want:
-**OneDrive**, a **local folder**, or any **webhook** (Zapier, n8n, Make, your own server).
+Desktop meeting transcriber for **Linux, macOS and Windows** · [puplify.com](https://puplify.com)
+
+It records your microphone and the meeting's system audio, transcribes both live, and sends the
+full text transcript wherever you want: **OneDrive**, **Google Drive**, **Dropbox**, **Notion**, a
+**local folder**, or any **webhook** (Zapier, n8n, Make, your own server).
+
+![Puplify showing a transcript: a two-lane timeline of who spoke when above the timestamped text](docs/screenshot.png)
 
 There are no bots joining calls and no AI notes. You get a transcript with a clear "who said what":
 
@@ -15,7 +19,8 @@ Weekly sync
 ```
 
 Speakers are told apart by audio source: the microphone is **Me** and system audio is **Them**.
-You can rename both labels in Settings.
+You can rename both labels in Settings. The timeline above each transcript shows both sources as
+separate lanes; click any block to jump to that part of the text.
 
 ## Features
 
@@ -24,37 +29,42 @@ You can rename both labels in Settings.
     doesn't invent text from silence. Text appears a few seconds after each pause.
   - **Deepgram** (Nova-3): cloud streaming with live partial results. Mic and system audio are sent
     as two channels, so speaker labels stay exact.
-- **Connectors** run when a recording finishes. You can re-send any stored transcript.
+- **Destinations** receive every finished transcript. You can re-send any stored transcript.
   - OneDrive (personal and work/school accounts): uploads `.txt`, `.md` and/or `.json`.
+  - Google Drive: same formats, into a folder in My Drive.
+  - Dropbox: same formats, into a Dropbox folder.
+  - Notion: one page per transcript under a page you choose.
   - Local folder: same formats, e.g. a synced folder or an Obsidian vault.
   - Webhooks: `recording.started`, live `transcript.segment`, and `recording.completed` with the
     full text. HMAC-signed.
 - **Local history**: every transcript is saved as JSON in the data directory and autosaved during
   recording.
-- **CLI** (`verbatim`): works without the GUI and is scriptable.
+- **CLI** (`puplify`): works without the GUI and is scriptable.
 
 ## Requirements
 
-| | Linux | macOS |
-|---|---|---|
-| OS | Any distro with PipeWire (`pipewire-pulse`) or PulseAudio | macOS 13 Ventura or newer |
-| Mic | default or chosen PulseAudio source | CoreAudio input |
-| System audio | monitor of the default output (or any monitor source) | ScreenCaptureKit (needs **Screen & System Audio Recording** permission) |
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| OS | Any distro with PipeWire (`pipewire-pulse`) or PulseAudio | macOS 13 Ventura or newer, Apple Silicon | Windows 10 or 11, x64 |
+| Mic | default or chosen PulseAudio source | CoreAudio input | WASAPI input |
+| System audio | monitor of the default output (or any monitor source) | ScreenCaptureKit (needs **Screen & System Audio Recording** permission) | WASAPI loopback of the default (or chosen) output |
 
 ## Install
 
-Download from [Releases](https://github.com/jrydel/verbatim/releases/latest):
+Download from [Releases](https://github.com/jrydel/puplify/releases/latest):
 
 | Platform | File |
 |---|---|
-| Fedora / RHEL / openSUSE | `Verbatim-<version>-1.x86_64.rpm` → `sudo dnf install ./Verbatim-*.rpm` |
-| Debian / Ubuntu | `Verbatim_<version>_amd64.deb` → `sudo apt install ./Verbatim_*.deb` |
-| Other Linux | `Verbatim_<version>_amd64.AppImage` → `chmod +x` and run |
-| macOS (Apple Silicon) | `Verbatim_<version>_aarch64.dmg` |
-| CLI only | `verbatim-cli-linux-x86_64.tar.gz`, `verbatim-cli-macos-arm64.tar.gz` |
+| Fedora / RHEL / openSUSE | `Puplify-<version>-1.x86_64.rpm` → `sudo dnf install ./Puplify-*.rpm` |
+| Debian / Ubuntu | `Puplify_<version>_amd64.deb` → `sudo apt install ./Puplify_*.deb` |
+| Other Linux | `Puplify_<version>_amd64.AppImage` → `chmod +x` and run |
+| macOS (Apple Silicon) | `Puplify_<version>_aarch64.dmg` |
+| Windows | `Puplify_<version>_x64-setup.exe` (or the `.msi`) |
+| CLI only | `puplify-cli-linux-x86_64.tar.gz`, `puplify-cli-macos-arm64.tar.gz`, `puplify-cli-windows-x86_64.zip` |
 
 The macOS build is ad-hoc signed, not notarized. After dragging it to Applications, run
-`xattr -dr com.apple.quarantine /Applications/Verbatim.app` once. Intel Macs: build from source.
+`xattr -dr com.apple.quarantine /Applications/Puplify.app` once. Intel Macs: build from source.
+The Windows installer is unsigned, so SmartScreen asks for confirmation (**More info → Run anyway**).
 
 ## Build dependencies
 
@@ -76,18 +86,22 @@ sudo apt install libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-
 
 macOS: Xcode Command Line Tools (`xcode-select --install`) and CMake (`brew install cmake`).
 
+Windows: Visual Studio Build Tools (Desktop development with C++), CMake and LLVM
+(`winget install Kitware.CMake LLVM.LLVM`). WebView2 ships with Windows 10/11.
+
 ## Build and run
 
 ```sh
 bun install                 # or: npm install
-bun run dev                 # run the desktop app in development
-bun run build               # bundles: .deb/.rpm/.AppImage on Linux, .app/.dmg on macOS
-cargo build --release -p verbatim-cli   # CLI only → target/release/verbatim
+bun run dev                 # desktop app with hot-reloading UI (Vite on :1420)
+bun run build               # bundles: .deb/.rpm/.AppImage, .app/.dmg, or .msi/.exe
+cargo build --release -p puplify-cli   # CLI only → target/release/puplify
 ```
 
-GPU acceleration for whisper.cpp is opt-in. Use `--features metal` on Apple Silicon, or
-`--features vulkan` / `--features cuda` on Linux, for example:
-`bun run build -- --features metal`.
+GPU acceleration for whisper.cpp is opt-in: `--features vulkan` or `--features cuda` on Linux and
+Windows, e.g. `bun run build -- --features vulkan`. On macOS whisper.cpp already uses Apple's
+Accelerate framework; the `metal` feature currently fails to link (missing clang runtime symbol
+`___isPlatformVersionAtLeast`), so releases ship without it.
 
 ## First run
 
@@ -98,8 +112,9 @@ GPU acceleration for whisper.cpp is opt-in. Use `--features metal` on Apple Sili
    - **Deepgram**: paste an API key from <https://console.deepgram.com>.
 2. **Audio**: keep both sources on. Wear headphones if you can; otherwise the mic also picks up the
    other people from your speakers, and their words show up twice (once as Me).
-3. Click **New recording → Start recording**. Click **Stop** when the meeting ends. The transcript
-   is saved and then sent to every enabled connector.
+3. **Destinations**: turn on where finished transcripts should go (setup for each below).
+4. Click **New recording → Start recording**. The meters show both sources are live. Click
+   **Stop** when the meeting ends; the transcript is saved and then sent to every destination.
 
 On macOS the first recording triggers two permission prompts: Microphone, and Screen & System Audio
 Recording. After granting the second one, restart the app.
@@ -110,7 +125,7 @@ OneDrive access needs a Microsoft Entra app registration. It's free, takes about
 app's client ID stays yours:
 
 1. Go to <https://entra.microsoft.com> → **App registrations** → **New registration**.
-   - Name: `Verbatim`
+   - Name: `Puplify`
    - Supported account types: **Accounts in any organizational directory and personal Microsoft
      accounts**. This allows both personal and work/school accounts.
    - Redirect URI: leave empty.
@@ -119,26 +134,86 @@ app's client ID stays yours:
 3. **API permissions** → Add → Microsoft Graph → Delegated: `Files.ReadWrite`, `User.Read`,
    `offline_access`. In work tenants that need it, an admin must grant consent.
 4. Copy the **Application (client) ID** from **Overview**.
-5. In the app: **Settings → OneDrive** → paste the client ID → **Sign in**. A browser page opens.
-   Enter the code shown in the app and approve.
-6. Tick **Upload finished transcripts**, choose a folder (default `Transcripts`) and formats, then
-   **Save settings**.
+5. In the app: **Settings → Destinations → OneDrive** → turn it on, paste the client ID →
+   **Connect OneDrive**. A browser page opens; enter the code shown in the app and approve.
+6. Choose a folder (default `Transcripts`) and file formats, then **Save changes**.
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending replaces the existing file. Tokens are
 stored in `onedrive-token.json` in the config directory (mode 0600) and refresh automatically.
 
 Single-tenant only? Put your tenant ID or domain in **Tenant** instead of `common`.
 
+## Google Drive setup
+
+Google Drive access needs your own OAuth client. It's free and takes about 5 minutes. Puplify only
+requests the `drive.file` scope, so it can see just the folder and files it creates, never the rest
+of your Drive:
+
+1. Go to <https://console.cloud.google.com> and create a project (or pick an existing one).
+2. **APIs & Services → Library** → search **Google Drive API** → **Enable**.
+3. **APIs & Services → OAuth consent screen** (Google Auth Platform → Branding/Audience): choose
+   **External**, fill in the app name and your email, and add your own Google account as a **test
+   user**. In *Testing* mode Google expires the sign-in after 7 days; click **Publish app** to avoid
+   that (no review is needed for this scope).
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Application type
+   **TVs and Limited Input devices**.
+5. Copy the **Client ID** and **Client secret**. Google requires the secret even for this client
+   type; it is stored in `config.json` (mode 0600).
+6. In the app: **Settings → Destinations → Google Drive** → turn it on, paste both values →
+   **Connect Google Drive**. Enter the code shown on the Google page and approve. From a terminal:
+   `puplify gdrive login`.
+7. Choose a folder name (default `Transcripts`, created in My Drive on first use) and file formats,
+   then **Save changes**.
+
+Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending updates the existing file instead of adding
+a copy. Tokens are stored in `google-drive-token.json` in the config directory (mode 0600) and
+refresh automatically.
+
+## Dropbox setup
+
+Dropbox access needs a (free) app in the Dropbox App Console. Sign-in uses PKCE, so there is no
+app secret to keep:
+
+1. Go to <https://www.dropbox.com/developers/apps> → **Create app**.
+2. Choose **Scoped access**, then **App folder** (Puplify only sees its own folder under
+   `Apps/`) or **Full Dropbox**. Name the app.
+3. **Permissions** tab: enable `files.content.write` and `account_info.read`, then **Submit**.
+4. **Settings** tab: copy the **App key**.
+5. In the app: **Settings → Destinations → Dropbox** → turn it on, paste the app key → **Connect
+   Dropbox**. Approve on the Dropbox page and paste the code it shows. From a terminal:
+   `puplify dropbox login`.
+6. Choose a folder (default `/Transcripts`) and file formats, then **Save changes**.
+
+Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending overwrites the existing file. With an App
+folder app, the folder is relative to it. Tokens are stored in `dropbox-token.json` in the config
+directory (mode 0600) and refresh automatically.
+
+## Notion setup
+
+Notion uses an internal integration token, so there is no sign-in step:
+
+1. Go to <https://www.notion.so/profile/integrations> → **New integration** → type **Internal**,
+   pick your workspace, and save. Copy the **Internal Integration Secret**.
+2. Open the Notion page that should hold your transcripts → **⋯ → Connections** → add your
+   integration. Without this, Notion answers "object not found".
+3. Copy that page's URL (**Share → Copy link**).
+4. In the app: **Settings → Destinations → Notion** → turn it on, paste the secret and the page
+   URL, then **Save changes**.
+
+Each transcript becomes a sub-page titled with the meeting title, starting with the date and
+duration, followed by one paragraph per speaker turn. Re-sending creates a new page.
+
 ## Webhooks
 
+Add webhooks in **Settings → Webhooks**; **Send test** posts a sample `recording.completed`.
 Every request is a `POST` with a JSON body and these headers:
 
 ```text
 Content-Type: application/json
-X-Verbatim-Event: recording.completed
-X-Verbatim-Delivery: 4f1c…            (unique per delivery)
-X-Verbatim-Timestamp: 1792505100      (unix seconds)
-X-Verbatim-Signature: sha256=<hex>    (only when a secret is set)
+X-Puplify-Event: recording.completed
+X-Puplify-Delivery: 4f1c…            (unique per delivery)
+X-Puplify-Timestamp: 1792505100      (unix seconds)
+X-Puplify-Signature: sha256=<hex>    (only when a secret is set)
 ```
 
 The signature is `HMAC-SHA256(secret, "<timestamp>.<raw body>")`. Check it and reject old
@@ -174,37 +249,42 @@ events are sent once.
 ## CLI
 
 ```text
-verbatim record [--title T] [--duration SECS]   # Ctrl-C stops
-verbatim transcribe meeting.wav [--title T]     # any WAV file
-verbatim list | show <id> [--format txt|md|json] | deliver <id> | delete <id>
-verbatim devices                                # mic + monitor sources
-verbatim models list | models download small.en
-verbatim onedrive login | status | logout
-verbatim webhook-test [name]
-verbatim config                                 # path + current settings
+puplify record [--title T] [--duration SECS]   # Ctrl-C stops
+puplify transcribe meeting.wav [--title T]     # any WAV file
+puplify list | show <id> [--format txt|md|json] | deliver <id> | delete <id>
+puplify devices                                # mic + monitor sources
+puplify models list | models download small.en
+puplify onedrive login | status | logout
+puplify gdrive login | status | logout
+puplify dropbox login | status | logout
+puplify webhook-test [name]
+puplify config                                 # path + current settings
 ```
 
 ## Files
 
-| | Linux | macOS |
-|---|---|---|
-| Settings (`config.json`, OneDrive token) | `~/.config/verbatim/` | `~/Library/Application Support/verbatim/` |
-| Transcripts, models | `~/.local/share/verbatim/` | `~/Library/Application Support/verbatim/` |
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| Settings (`config.json`, sign-in tokens) | `~/.config/puplify/` | `~/Library/Application Support/puplify/` | `%APPDATA%\puplify\config\` |
+| Transcripts, models | `~/.local/share/puplify/` | `~/Library/Application Support/puplify/` | `%APPDATA%\puplify\data\` |
 
-Set `VERBATIM_HOME=/some/dir` to keep everything in one directory (for portable installs or tests).
-`config.json` is plain JSON with mode 0600; the GUI and CLI share it.
+Set `PUPLIFY_HOME=/some/dir` to keep everything in one directory (for portable installs or tests).
+`config.json` is plain JSON; the GUI and CLI share it. On Linux and macOS it and the token files are
+created with mode 0600.
 
 ## Layout
 
 ```text
 crates/core   capture (audio/), engines (stt/), transcript + store, connectors/, session pipeline
-crates/cli    `verbatim` command
+crates/cli    `puplify` command
 src-tauri     desktop app (commands in src/main.rs)
-ui            plain HTML/CSS/JS front end, no build step
+ui            React + Tailwind + shadcn/ui front end (Vite; built into dist/)
+site          puplify.com landing page (Cloudflare Worker)
 ```
 
 ## Development
 
 ```sh
-cargo test -p verbatim-core
+cargo test -p puplify-core
+bun run build:ui            # type-check and build the front end
 ```

@@ -2,10 +2,10 @@
 //! over `"{timestamp}.{body}"` when a secret is configured:
 //!
 //! ```text
-//! X-Verbatim-Event: recording.completed
-//! X-Verbatim-Delivery: <uuid>
-//! X-Verbatim-Timestamp: <unix seconds>
-//! X-Verbatim-Signature: sha256=<hex hmac>
+//! X-Puplify-Event: recording.completed
+//! X-Puplify-Delivery: <uuid>
+//! X-Puplify-Timestamp: <unix seconds>
+//! X-Puplify-Signature: sha256=<hex hmac>
 //! ```
 
 use std::time::Duration;
@@ -74,7 +74,7 @@ pub async fn send(hook: &WebhookConfig, event: WebhookEvent, payload: &Value, at
     let body = serde_json::to_vec(&envelope)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
-        .user_agent(concat!("verbatim/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("puplify/", env!("CARGO_PKG_VERSION")))
         .build()?;
 
     let mut last_err = anyhow!("no attempts made");
@@ -86,12 +86,12 @@ pub async fn send(hook: &WebhookConfig, event: WebhookEvent, payload: &Value, at
         let mut req = client
             .post(hook.url.trim())
             .header("Content-Type", "application/json")
-            .header("X-Verbatim-Event", event.as_str())
-            .header("X-Verbatim-Delivery", &delivery)
-            .header("X-Verbatim-Timestamp", timestamp.to_string())
+            .header("X-Puplify-Event", event.as_str())
+            .header("X-Puplify-Delivery", &delivery)
+            .header("X-Puplify-Timestamp", timestamp.to_string())
             .body(body.clone());
         if !hook.secret.is_empty() {
-            req = req.header("X-Verbatim-Signature", sign(&hook.secret, timestamp, &body));
+            req = req.header("X-Puplify-Signature", sign(&hook.secret, timestamp, &body));
         }
         match req.send().await {
             Ok(resp) if resp.status().is_success() => return Ok(format!("HTTP {}", resp.status().as_u16())),

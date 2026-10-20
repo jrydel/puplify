@@ -1,4 +1,4 @@
-//! Core of Verbatim: audio capture, speech-to-text, transcript storage and
+//! Core of Puplify: audio capture, speech-to-text, transcript storage and
 //! delivery connectors (local folder, OneDrive, webhooks). Shared by the CLI and
 //! the Tauri desktop app.
 

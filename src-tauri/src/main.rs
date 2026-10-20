@@ -1,10 +1,10 @@
 // Prevents an extra console window on Windows release builds; harmless elsewhere.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use verbatim_core::{
+use puplify_core::{
     audio::{self, DeviceInfo},
     config::Config,
-    connectors::{self, onedrive, webhook, DeliveryResult},
+    connectors::{self, dropbox, google_drive, onedrive, webhook, DeliveryResult},
     session::{Recording, SessionEvent},
     store::{self, TranscriptSummary},
     stt::models::{self, ModelStatus},
@@ -49,11 +49,30 @@ struct ModelProgress {
     total: Option<u64>,
 }
 
+/// Outcome of a background sign-in, emitted as the `account-login` event.
 #[derive(Clone, Serialize)]
 struct LoginResult {
+    provider: &'static str,
     ok: bool,
     account: Option<String>,
     error: Option<String>,
+}
+
+impl LoginResult {
+    fn from(provider: &'static str, result: anyhow::Result<String>) -> Self {
+        match result {
+            Ok(account) => Self { provider, ok: true, account: Some(account), error: None },
+            Err(e) => Self { provider, ok: false, account: None, error: Some(format!("{e:#}")) },
+        }
+    }
+}
+
+/// Code the user enters on the provider's sign-in page.
+#[derive(Serialize)]
+struct DeviceLogin {
+    user_code: String,
+    verification_uri: String,
+    expires_in: u64,
 }
 
 #[tauri::command]
@@ -182,25 +201,76 @@ fn onedrive_status() -> CmdResult<Option<String>> {
     onedrive::status().map_err(anyhow_err)
 }
 
-/// Starts device-code sign-in; the outcome arrives as an `onedrive-login` event.
+/// Starts device-code sign-in; the outcome arrives as an `account-login` event.
 #[tauri::command]
-async fn onedrive_login(app: AppHandle) -> CmdResult<onedrive::DeviceCode> {
+async fn onedrive_login(app: AppHandle) -> CmdResult<DeviceLogin> {
     let cfg = Config::load().map_err(anyhow_err)?.connectors.onedrive;
     let code = onedrive::begin_login(&cfg).await.map_err(anyhow_err)?;
-    let pending = code.clone();
+    let view = DeviceLogin {
+        user_code: code.user_code.clone(),
+        verification_uri: code.verification_uri.clone(),
+        expires_in: code.expires_in,
+    };
     tauri::async_runtime::spawn(async move {
-        let result = match onedrive::finish_login(&cfg, &pending).await {
-            Ok(account) => LoginResult { ok: true, account: Some(account), error: None },
-            Err(e) => LoginResult { ok: false, account: None, error: Some(format!("{e:#}")) },
-        };
-        let _ = app.emit("onedrive-login", result);
+        let result = onedrive::finish_login(&cfg, &code).await;
+        let _ = app.emit("account-login", LoginResult::from("onedrive", result));
     });
-    Ok(code)
+    Ok(view)
 }
 
 #[tauri::command]
 fn onedrive_logout() -> CmdResult<()> {
     onedrive::logout().map_err(anyhow_err)
+}
+
+#[tauri::command]
+fn gdrive_status() -> CmdResult<Option<String>> {
+    google_drive::status().map_err(anyhow_err)
+}
+
+/// Starts device-code sign-in; the outcome arrives as an `account-login` event.
+#[tauri::command]
+async fn gdrive_login(app: AppHandle) -> CmdResult<DeviceLogin> {
+    let cfg = Config::load().map_err(anyhow_err)?.connectors.google_drive;
+    let code = google_drive::begin_login(&cfg).await.map_err(anyhow_err)?;
+    let view = DeviceLogin {
+        user_code: code.user_code.clone(),
+        verification_uri: code.verification_uri.clone(),
+        expires_in: code.expires_in,
+    };
+    tauri::async_runtime::spawn(async move {
+        let result = google_drive::finish_login(&cfg, &code).await;
+        let _ = app.emit("account-login", LoginResult::from("google_drive", result));
+    });
+    Ok(view)
+}
+
+#[tauri::command]
+fn gdrive_logout() -> CmdResult<()> {
+    google_drive::logout().map_err(anyhow_err)
+}
+
+#[tauri::command]
+fn dropbox_status() -> CmdResult<Option<String>> {
+    dropbox::status().map_err(anyhow_err)
+}
+
+/// Returns the authorization URL and PKCE verifier; the user pastes back the code.
+#[tauri::command]
+fn dropbox_begin_login() -> CmdResult<dropbox::PendingLogin> {
+    let cfg = Config::load().map_err(anyhow_err)?.connectors.dropbox;
+    dropbox::begin_login(&cfg).map_err(anyhow_err)
+}
+
+#[tauri::command]
+async fn dropbox_finish_login(verifier: String, code: String) -> CmdResult<String> {
+    let cfg = Config::load().map_err(anyhow_err)?.connectors.dropbox;
+    dropbox::finish_login(&cfg, &verifier, code.trim()).await.map_err(anyhow_err)
+}
+
+#[tauri::command]
+fn dropbox_logout() -> CmdResult<()> {
+    dropbox::logout().map_err(anyhow_err)
 }
 
 #[tauri::command]
@@ -237,8 +307,15 @@ fn main() {
             onedrive_status,
             onedrive_login,
             onedrive_logout,
+            gdrive_status,
+            gdrive_login,
+            gdrive_logout,
+            dropbox_status,
+            dropbox_begin_login,
+            dropbox_finish_login,
+            dropbox_logout,
             test_webhook,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Verbatim");
+        .expect("error while running Puplify");
 }

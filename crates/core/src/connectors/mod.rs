@@ -6,7 +6,11 @@ use serde::Serialize;
 use crate::config::{Config, WebhookEvent};
 use crate::transcript::{Segment, Transcript};
 
+pub mod dropbox;
 pub mod folder;
+pub mod google_drive;
+pub mod notion;
+pub mod oauth;
 pub mod onedrive;
 pub mod webhook;
 
@@ -39,6 +43,21 @@ pub async fn deliver(cfg: &Config, transcript: &Transcript) -> Vec<DeliveryResul
     if c.onedrive.enabled {
         tasks.push(Box::pin(async {
             DeliveryResult::from("onedrive".into(), onedrive::export(&c.onedrive, transcript).await)
+        }));
+    }
+    if c.google_drive.enabled {
+        tasks.push(Box::pin(async {
+            DeliveryResult::from("google-drive".into(), google_drive::export(&c.google_drive, transcript).await)
+        }));
+    }
+    if c.dropbox.enabled {
+        tasks.push(Box::pin(async {
+            DeliveryResult::from("dropbox".into(), dropbox::export(&c.dropbox, transcript).await)
+        }));
+    }
+    if c.notion.enabled {
+        tasks.push(Box::pin(async {
+            DeliveryResult::from("notion".into(), notion::export(&c.notion, transcript).await)
         }));
     }
     for hook in c.webhooks.iter().filter(|h| h.enabled && h.events.contains(&WebhookEvent::RecordingCompleted)) {

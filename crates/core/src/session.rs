@@ -24,6 +24,8 @@ pub enum SessionEvent {
     Partial { speaker: Speaker, text: String },
     Segment { segment: Segment },
     Error { message: String },
+    /// Input levels (RMS, 0–1) of each source since the previous event, ~12 per second.
+    Levels { me: f32, them: f32 },
     /// Transcription ended and the transcript is saved locally.
     Finished { transcript_id: String },
     Delivery { result: DeliveryResult },
@@ -32,6 +34,7 @@ pub enum SessionEvent {
 }
 
 const AUTOSAVE_EVERY: Duration = Duration::from_secs(10);
+const LEVELS_EVERY: Duration = Duration::from_millis(80);
 
 pub struct Recording {
     pub transcript_id: String,
@@ -56,8 +59,10 @@ impl Recording {
         }
         let engine = Engine::from_config(&cfg.stt).await?;
         let (audio_tx, audio_rx) = mpsc::unbounded_channel();
+        let (capture_tx, capture_rx) = mpsc::unbounded_channel();
+        tokio::spawn(meter(capture_rx, audio_tx, events.clone()));
         let (transcript, task) = spawn_pipeline(cfg.clone(), title, engine, speakers, audio_rx, None, events).await?;
-        let capture = match tokio::task::block_in_place(|| Capture::start(&cfg.capture, audio_tx)) {
+        let capture = match tokio::task::block_in_place(|| Capture::start(&cfg.capture, capture_tx)) {
             Ok(c) => c,
             Err(e) => {
                 // Nothing was recorded: stop the pipeline before it delivers anything.
@@ -81,6 +86,37 @@ impl Recording {
             tokio::task::spawn_blocking(move || capture.stop()).await?;
         }
         self.task.await?
+    }
+}
+
+/// Forwards capture audio to the engine while reporting input levels, so the
+/// UI can show that both sources are actually live.
+async fn meter(
+    mut capture: UnboundedReceiver<AudioMsg>,
+    engine: UnboundedSender<AudioMsg>,
+    events: UnboundedSender<SessionEvent>,
+) {
+    let (mut me, mut them) = (0f32, 0f32);
+    let mut last = Instant::now();
+    while let Some(msg) = capture.recv().await {
+        if let AudioMsg::Frame { speaker, samples } = &msg {
+            if !samples.is_empty() {
+                let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
+                let level = match speaker {
+                    Speaker::Me => &mut me,
+                    Speaker::Them => &mut them,
+                };
+                *level = level.max(rms);
+            }
+        }
+        if engine.send(msg).is_err() {
+            return;
+        }
+        if last.elapsed() >= LEVELS_EVERY {
+            let _ = events.send(SessionEvent::Levels { me, them });
+            (me, them) = (0.0, 0.0);
+            last = Instant::now();
+        }
     }
 }
 

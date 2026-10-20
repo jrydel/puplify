@@ -17,11 +17,15 @@ jobs:
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             args: ""
-            cli_name: verbatim-cli-linux-x86_64
+            cli_name: puplify-cli-linux-x86_64
           - platform: macos-latest
             target: aarch64-apple-darwin
-            args: "--target aarch64-apple-darwin --features metal"
-            cli_name: verbatim-cli-macos-arm64
+            args: "--target aarch64-apple-darwin"
+            cli_name: puplify-cli-macos-arm64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+            cli_name: puplify-cli-windows-x86_64
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -49,8 +53,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Verbatim ${{ github.ref_name }}"
-          releaseBody: "See the README for setup. macOS builds are ad-hoc signed (not notarized): after installing, run `xattr -dr com.apple.quarantine /Applications/Verbatim.app`."
+          releaseName: "Puplify ${{ github.ref_name }}"
+          releaseBody: "See the README for setup. macOS builds are ad-hoc signed (not notarized): after installing, run `xattr -dr com.apple.quarantine /Applications/Puplify.app`."
           releaseDraft: false
           prerelease: false
           tauriScript: bun run tauri
@@ -58,11 +62,17 @@ jobs:
 
       - name: Build and upload CLI
         if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          features=""
-          if [ "$RUNNER_OS" = "macOS" ]; then features="--features verbatim-core/metal"; fi
-          cargo build --release -p verbatim-cli --target ${{ matrix.target }} $features
-          tar -czf ${{ matrix.cli_name }}.tar.gz -C target/${{ matrix.target }}/release verbatim
-          gh release upload "${GITHUB_REF_NAME}" ${{ matrix.cli_name }}.tar.gz --clobber
+          cargo build --release -p puplify-cli --target ${{ matrix.target }}
+          out=target/${{ matrix.target }}/release
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            archive=${{ matrix.cli_name }}.zip
+            7z a "$archive" "./$out/puplify.exe"
+          else
+            archive=${{ matrix.cli_name }}.tar.gz
+            tar -czf "$archive" -C "$out" puplify
+          fi
+          gh release upload "${GITHUB_REF_NAME}" "$archive" --clobber

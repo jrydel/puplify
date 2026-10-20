@@ -1,0 +1,20 @@
+import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+// The desktop UI lives in ui/; Tauri loads the built files from dist/.
+export default defineConfig({
+  root: "ui",
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { "@": path.resolve(__dirname, "ui/src") },
+  },
+  clearScreen: false,
+  server: { port: 1420, strictPort: true },
+  build: {
+    outDir: "../dist",
+    emptyOutDir: true,
+    target: "es2022",
+  },
+});

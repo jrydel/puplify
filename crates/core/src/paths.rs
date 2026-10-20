@@ -4,14 +4,14 @@ use anyhow::{Context, Result};
 
 /// Environment variable that relocates all config and data under one directory.
 /// Useful for portable installs and tests.
-pub const HOME_ENV: &str = "VERBATIM_HOME";
+pub const HOME_ENV: &str = "PUPLIFY_HOME";
 
 fn dirs() -> Result<(PathBuf, PathBuf)> {
     if let Some(home) = std::env::var_os(HOME_ENV) {
         let home = PathBuf::from(home);
         return Ok((home.join("config"), home.join("data")));
     }
-    let dirs = directories::ProjectDirs::from("", "", "verbatim")
+    let dirs = directories::ProjectDirs::from("", "", "puplify")
         .context("could not determine home directory")?;
     Ok((dirs.config_dir().to_path_buf(), dirs.data_dir().to_path_buf()))
 }
@@ -21,12 +21,12 @@ fn ensure(path: PathBuf) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// `~/.config/verbatim` on Linux, `~/Library/Application Support/verbatim` on macOS.
+/// `~/.config/puplify` on Linux, `~/Library/Application Support/puplify` on macOS.
 pub fn config_dir() -> Result<PathBuf> {
     ensure(dirs()?.0)
 }
 
-/// `~/.local/share/verbatim` on Linux, `~/Library/Application Support/verbatim` on macOS.
+/// `~/.local/share/puplify` on Linux, `~/Library/Application Support/puplify` on macOS.
 pub fn data_dir() -> Result<PathBuf> {
     ensure(dirs()?.1)
 }

@@ -1,23 +1,25 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Verbatim",
-  "identifier": "cz.jrydel.verbatim",
+  "productName": "Puplify",
+  "identifier": "cz.jrydel.puplify",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "bun run dev:ui",
+    "beforeBuildCommand": "bun run build:ui"
   },
   "app": {
-    "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Verbatim",
-        "width": 1080,
-        "height": 720,
-        "minWidth": 760,
-        "minHeight": 480
+        "title": "Puplify",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 820,
+        "minHeight": 520
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {
@@ -29,6 +31,7 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
+      "icons/icon.ico",
       "icons/icon.png"
     ],
     "linux": {

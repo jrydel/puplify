@@ -136,6 +136,9 @@ fn default_formats() -> Vec<ExportFormat> {
 pub struct ConnectorsConfig {
     pub folder: FolderConfig,
     pub onedrive: OneDriveConfig,
+    pub google_drive: GoogleDriveConfig,
+    pub dropbox: DropboxConfig,
+    pub notion: NotionConfig,
     pub webhooks: Vec<WebhookConfig>,
 }
 
@@ -183,6 +186,66 @@ impl Default for OneDriveConfig {
     }
 }
 
+/// Uploads transcripts to Google Drive (`drive.file` scope: only files this app creates).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct GoogleDriveConfig {
+    pub enabled: bool,
+    /// OAuth client ID of type "TVs and Limited Input devices".
+    pub client_id: String,
+    /// Google requires the client secret in token requests, even for this client type.
+    pub client_secret: String,
+    /// Folder name in My Drive; created on first use.
+    pub folder: String,
+    pub formats: Vec<ExportFormat>,
+}
+
+impl Default for GoogleDriveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            client_id: String::new(),
+            client_secret: String::new(),
+            folder: "Transcripts".into(),
+            formats: default_formats(),
+        }
+    }
+}
+
+/// Uploads transcripts to Dropbox. Sign-in uses OAuth 2 PKCE, so no app secret is needed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct DropboxConfig {
+    pub enabled: bool,
+    /// App key from the Dropbox App Console.
+    pub app_key: String,
+    /// Destination folder (relative to the app folder for app-folder apps).
+    pub folder: String,
+    pub formats: Vec<ExportFormat>,
+}
+
+impl Default for DropboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            app_key: String::new(),
+            folder: "/Transcripts".into(),
+            formats: default_formats(),
+        }
+    }
+}
+
+/// Creates a Notion page per transcript under an existing page.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct NotionConfig {
+    pub enabled: bool,
+    /// Internal integration token.
+    pub token: String,
+    /// Page ID or URL of the parent page (shared with the integration).
+    pub parent_page_id: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum WebhookEvent {
     #[serde(rename = "recording.started")]
@@ -208,7 +271,7 @@ impl WebhookEvent {
 pub struct WebhookConfig {
     pub name: String,
     pub url: String,
-    /// When non-empty, requests carry `X-Verbatim-Signature: sha256=<hmac>`.
+    /// When non-empty, requests carry `X-Puplify-Signature: sha256=<hmac>`.
     pub secret: String,
     pub enabled: bool,
     pub events: Vec<WebhookEvent>,

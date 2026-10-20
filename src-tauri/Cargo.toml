@@ -1,5 +1,5 @@
 [package]
-name = "verbatim-app"
+name = "puplify-app"
 description = "Meeting transcription with OneDrive, webhook and folder connectors"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ rust-version.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-verbatim-core.workspace = true
+puplify-core.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -20,6 +20,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 
 [features]
-metal = ["verbatim-core/metal"]
-vulkan = ["verbatim-core/vulkan"]
-cuda = ["verbatim-core/cuda"]
+metal = ["puplify-core/metal"]
+vulkan = ["puplify-core/vulkan"]
+cuda = ["puplify-core/cuda"]

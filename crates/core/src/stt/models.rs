@@ -56,7 +56,7 @@ pub fn resolve(model: &str) -> Result<PathBuf> {
     }
     let path = file_for(model)?;
     if !path.is_file() {
-        bail!("whisper model {model} is not downloaded yet (download it in Settings or run `verbatim models download {model}`)");
+        bail!("whisper model {model} is not downloaded yet (download it in Settings or run `puplify models download {model}`)");
     }
     Ok(path)
 }

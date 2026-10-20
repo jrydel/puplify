@@ -104,7 +104,8 @@ impl Transcript {
         format!("{date} {title}")
     }
 
-    fn header_line(&self) -> String {
+    /// `2026-10-20 14:05 – 14:50 (45 min)`; the end/duration part appears once the recording ended.
+    pub fn header_line(&self) -> String {
         let start = self.started_at.with_timezone(&Local);
         let mut line = start.format("%Y-%m-%d %H:%M").to_string();
         if let Some(end) = self.ended_at {
@@ -133,10 +134,19 @@ impl Transcript {
         out.into_iter().map(|(s, start, _, t)| (s, start, t)).collect()
     }
 
+    /// One `[HH:MM:SS] Speaker: text` line per merged paragraph.
+    pub fn body_lines(&self) -> Vec<String> {
+        self.paragraphs()
+            .into_iter()
+            .map(|(speaker, start, text)| format!("[{}] {}: {}", fmt_ts(start), self.labels.get(speaker), text))
+            .collect()
+    }
+
     pub fn to_text(&self) -> String {
         let mut out = format!("{}\n{}\n\n", self.title, self.header_line());
-        for (speaker, start, text) in self.paragraphs() {
-            let _ = writeln!(out, "[{}] {}: {}", fmt_ts(start), self.labels.get(speaker), text);
+        for line in self.body_lines() {
+            out.push_str(&line);
+            out.push('\n');
         }
         out
     }

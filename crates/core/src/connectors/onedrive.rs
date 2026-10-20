@@ -10,8 +10,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::oauth::{self, http, oauth_error, OAuthError};
 use crate::config::OneDriveConfig;
-use crate::paths;
 use crate::transcript::Transcript;
 
 const SCOPES: &str = "Files.ReadWrite offline_access User.Read";
@@ -48,15 +48,7 @@ struct TokenResponse {
     expires_in: i64,
 }
 
-#[derive(Deserialize)]
-struct OAuthError {
-    error: String,
-    error_description: Option<String>,
-}
-
-fn token_path() -> Result<std::path::PathBuf> {
-    Ok(paths::config_dir()?.join("onedrive-token.json"))
-}
+const TOKEN_FILE: &str = "onedrive-token.json";
 
 fn authority(cfg: &OneDriveConfig) -> String {
     let tenant = match cfg.tenant.trim() {
@@ -73,23 +65,12 @@ fn client_id(cfg: &OneDriveConfig) -> Result<&str> {
     }
 }
 
-fn http() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .user_agent(concat!("verbatim/", env!("CARGO_PKG_VERSION")))
-        .build()?)
-}
-
 fn load_token() -> Result<Option<StoredToken>> {
-    match std::fs::read(token_path()?) {
-        Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).context("parsing OneDrive token")?)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
+    oauth::load_token(TOKEN_FILE, "OneDrive")
 }
 
 fn save_token(token: &StoredToken) -> Result<()> {
-    paths::write_atomic(&token_path()?, &serde_json::to_vec_pretty(token)?, true)
+    oauth::save_token(TOKEN_FILE, token)
 }
 
 /// Signed-in account, if any.
@@ -98,10 +79,7 @@ pub fn status() -> Result<Option<String>> {
 }
 
 pub fn logout() -> Result<()> {
-    match std::fs::remove_file(token_path()?) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
-        _ => Ok(()),
-    }
+    oauth::remove_token(TOKEN_FILE)
 }
 
 /// Step 1: obtain a code the user enters at `verification_uri`.
@@ -173,14 +151,6 @@ async fn fetch_account(client: &reqwest::Client, access_token: &str) -> Result<S
         .find_map(|k| me[*k].as_str().filter(|s| !s.is_empty()))
         .unwrap_or("Microsoft account")
         .to_string())
-}
-
-async fn oauth_error(resp: reqwest::Response) -> String {
-    let status = resp.status();
-    match resp.json::<OAuthError>().await {
-        Ok(e) => e.error_description.unwrap_or(e.error),
-        Err(_) => format!("HTTP {status}"),
-    }
 }
 
 /// Valid access token, refreshing (and persisting the rotated refresh token) when needed.

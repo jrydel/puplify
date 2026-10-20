@@ -21,13 +21,21 @@ mod linux;
 #[cfg(target_os = "linux")]
 use linux as platform;
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod cpal_input;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
 use macos as platform;
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-compile_error!("verbatim-core supports Linux and macOS only");
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+use windows as platform;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+compile_error!("puplify-core supports Linux, macOS and Windows only");
 
 /// Sample rate of every frame delivered by the capture layer.
 pub const SAMPLE_RATE: u32 = 16_000;

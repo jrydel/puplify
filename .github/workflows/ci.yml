@@ -10,12 +10,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
       - name: Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -23,6 +24,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
             patchelf libpulse-dev libclang-dev cmake
       - name: Test core
-        run: cargo test -p verbatim-core
+        run: cargo test -p puplify-core
+      - name: Build UI
+        run: |
+          bun install --frozen-lockfile
+          bun run build:ui
       - name: Build CLI and app
-        run: cargo build -p verbatim-cli -p verbatim-app
+        run: cargo build -p puplify-cli -p puplify-app

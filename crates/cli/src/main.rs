@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use verbatim_core::{
+use puplify_core::{
     audio,
     config::{Config, ExportFormat},
-    connectors::{self, onedrive, webhook},
+    connectors::{self, dropbox, google_drive, onedrive, webhook},
     session::{self, Recording, SessionEvent},
     store,
     stt::models,
@@ -16,7 +16,7 @@ use verbatim_core::{
 use tokio::sync::mpsc;
 
 #[derive(Parser)]
-#[command(name = "verbatim", version, about = "Meeting transcription with connectors (OneDrive, webhooks, folders)")]
+#[command(name = "puplify", version, about = "Meeting transcription with connectors (OneDrive, Google Drive, Dropbox, Notion, webhooks, folders)")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -62,6 +62,16 @@ enum Command {
         #[command(subcommand)]
         command: OneDriveCommand,
     },
+    /// Connect or disconnect Google Drive.
+    Gdrive {
+        #[command(subcommand)]
+        command: SignInCommand,
+    },
+    /// Connect or disconnect Dropbox.
+    Dropbox {
+        #[command(subcommand)]
+        command: SignInCommand,
+    },
     /// Send a test event to a configured webhook (by name or URL; all when omitted).
     WebhookTest { name: Option<String> },
     /// Print the config file path and contents.
@@ -76,6 +86,13 @@ enum ModelsCommand {
 
 #[derive(Subcommand)]
 enum OneDriveCommand {
+    Login,
+    Status,
+    Logout,
+}
+
+#[derive(Subcommand)]
+enum SignInCommand {
     Login,
     Status,
     Logout,
@@ -197,6 +214,46 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Command::Onedrive { command: OneDriveCommand::Logout } => onedrive::logout(),
+        Command::Gdrive { command: SignInCommand::Login } => {
+            let code = google_drive::begin_login(&cfg.connectors.google_drive).await?;
+            println!("{}", code.message);
+            let account = google_drive::finish_login(&cfg.connectors.google_drive, &code).await?;
+            println!("Signed in as {account}");
+            if !cfg.connectors.google_drive.enabled {
+                println!("Note: Google Drive export is disabled; set connectors.google_drive.enabled = true in {}", Config::path()?.display());
+            }
+            Ok(())
+        }
+        Command::Gdrive { command: SignInCommand::Status } => {
+            match google_drive::status()? {
+                Some(account) => println!("Signed in as {account}"),
+                None => println!("Not signed in"),
+            }
+            Ok(())
+        }
+        Command::Gdrive { command: SignInCommand::Logout } => google_drive::logout(),
+        Command::Dropbox { command: SignInCommand::Login } => {
+            let pending = dropbox::begin_login(&cfg.connectors.dropbox)?;
+            println!("Open this URL, approve access, and paste the code Dropbox shows:\n\n{}\n", pending.url);
+            print!("Code: ");
+            std::io::stdout().flush()?;
+            let mut code = String::new();
+            std::io::stdin().read_line(&mut code).context("reading the code from stdin")?;
+            let account = dropbox::finish_login(&cfg.connectors.dropbox, &pending.verifier, &code).await?;
+            println!("Signed in as {account}");
+            if !cfg.connectors.dropbox.enabled {
+                println!("Note: Dropbox export is disabled; set connectors.dropbox.enabled = true in {}", Config::path()?.display());
+            }
+            Ok(())
+        }
+        Command::Dropbox { command: SignInCommand::Status } => {
+            match dropbox::status()? {
+                Some(account) => println!("Signed in as {account}"),
+                None => println!("Not signed in"),
+            }
+            Ok(())
+        }
+        Command::Dropbox { command: SignInCommand::Logout } => dropbox::logout(),
         Command::WebhookTest { name } => {
             let hooks: Vec<_> = cfg
                 .connectors
@@ -287,7 +344,7 @@ async fn print_events(mut rx: mpsc::UnboundedReceiver<SessionEvent>) {
             SessionEvent::Delivery { result } => {
                 eprintln!("{} {}: {}", if result.ok { "✓" } else { "✗" }, result.connector, result.detail)
             }
-            SessionEvent::Done { .. } => {}
+            SessionEvent::Done { .. } | SessionEvent::Levels { .. } => {}
         }
     }
 }

@@ -1,5 +1,5 @@
 [package]
-name = "verbatim-core"
+name = "puplify-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -23,6 +23,7 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 urlencoding = "2"
+base64 = "0.22"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libpulse-binding = "2"
@@ -31,6 +32,9 @@ libpulse-simple-binding = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 cpal = "0.18"
 screencapturekit = "11"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+cpal = "0.18"
 
 [features]
 # GPU acceleration for whisper.cpp; enable the one matching the build host.

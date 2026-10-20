@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect x="64" y="64" width="896" height="896" rx="216" fill="#121821"/>
+  <!-- Two tape lanes: Me (cobalt) above Them (amber), utterances as pills. -->
+  <rect x="208" y="356" width="608" height="96" rx="48" fill="#ffffff" fill-opacity="0.08"/>
+  <rect x="208" y="572" width="608" height="96" rx="48" fill="#ffffff" fill-opacity="0.08"/>
+  <rect x="208" y="356" width="168" height="96" rx="48" fill="#4c6cff"/>
+  <rect x="560" y="356" width="104" height="96" rx="48" fill="#4c6cff"/>
+  <rect x="400" y="572" width="136" height="96" rx="48" fill="#f2a93b"/>
+  <rect x="688" y="572" width="128" height="96" rx="48" fill="#f2a93b"/>
+</svg>
