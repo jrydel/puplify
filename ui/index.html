@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verbatim</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">Verbatim</div>
+      <button id="new-recording" class="primary wide">● New recording</button>
+      <input id="search" type="search" placeholder="Search transcripts" />
+      <nav id="history" class="history" aria-label="Transcripts"></nav>
+      <button id="open-settings" class="ghost wide">Settings</button>
+    </aside>
+
+    <main id="main">
+      <div id="toast" class="toast" hidden></div>
+
+      <section id="view-record" class="view" hidden>
+        <header class="record-header">
+          <input id="record-title" class="title-input" placeholder="Meeting title (optional)" />
+          <div class="record-controls">
+            <span id="record-timer" class="timer">00:00:00</span>
+            <button id="record-toggle" class="primary">Start recording</button>
+          </div>
+        </header>
+        <p id="record-status" class="muted"></p>
+        <div id="live" class="transcript live"></div>
+        <div id="partials" class="partials"></div>
+        <ul id="record-deliveries" class="deliveries"></ul>
+      </section>
+
+      <section id="view-transcript" class="view" hidden>
+        <header class="transcript-header">
+          <input id="t-title" class="title-input" />
+          <div class="actions">
+            <button id="t-copy" class="ghost">Copy text</button>
+            <button id="t-deliver" class="ghost">Send to connectors</button>
+            <button id="t-delete" class="ghost danger">Delete</button>
+          </div>
+        </header>
+        <p id="t-meta" class="muted"></p>
+        <ul id="t-deliveries" class="deliveries"></ul>
+        <div id="t-body" class="transcript"></div>
+      </section>
+
+      <section id="view-settings" class="view" hidden>
+        <header><h1>Settings</h1></header>
+        <form id="settings" autocomplete="off">
+          <fieldset>
+            <legend>Transcription</legend>
+            <label>Engine
+              <select name="stt.provider">
+                <option value="whisper">Local (whisper.cpp) — private, offline</option>
+                <option value="deepgram">Deepgram — cloud, live streaming</option>
+              </select>
+            </label>
+            <div data-show="stt.provider=whisper">
+              <label>Model <select name="stt.whisper.model" id="model-select"></select></label>
+              <div class="row">
+                <button type="button" id="model-download" class="ghost">Download model</button>
+                <span id="model-progress" class="muted"></span>
+              </div>
+              <label>Language <input name="stt.whisper.language" placeholder="en, de, cs… or auto" /></label>
+            </div>
+            <div data-show="stt.provider=deepgram">
+              <label>API key <input name="stt.deepgram.api_key" type="password" /></label>
+              <label>Model <input name="stt.deepgram.model" placeholder="nova-3" /></label>
+              <label>Language <input name="stt.deepgram.language" placeholder="en or multi" /></label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Audio</legend>
+            <label class="check"><input type="checkbox" name="capture.mic" /> Record microphone</label>
+            <label>Microphone <select name="capture.mic_device" id="mic-select"></select></label>
+            <label>Your label <input name="capture.me_label" /></label>
+            <label class="check"><input type="checkbox" name="capture.system" /> Record system audio (other participants)</label>
+            <label id="system-device-row">System audio source <select name="capture.system_device" id="system-select"></select></label>
+            <label>Others' label <input name="capture.them_label" /></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>OneDrive</legend>
+            <label class="check"><input type="checkbox" name="connectors.onedrive.enabled" /> Upload finished transcripts</label>
+            <label>Application (client) ID <input name="connectors.onedrive.client_id" placeholder="00000000-0000-0000-0000-000000000000" /></label>
+            <label>Tenant <input name="connectors.onedrive.tenant" placeholder="common" /></label>
+            <label>Folder <input name="connectors.onedrive.folder" placeholder="Transcripts" /></label>
+            <div class="formats" data-formats="connectors.onedrive.formats"></div>
+            <div class="row">
+              <span id="onedrive-account" class="muted"></span>
+              <button type="button" id="onedrive-login" class="ghost">Sign in</button>
+              <button type="button" id="onedrive-logout" class="ghost">Sign out</button>
+            </div>
+            <div id="onedrive-code" class="callout" hidden></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Local folder</legend>
+            <label class="check"><input type="checkbox" name="connectors.folder.enabled" /> Copy finished transcripts to a folder</label>
+            <label>Folder path <input name="connectors.folder.path" placeholder="/home/me/Documents/Meetings" /></label>
+            <div class="formats" data-formats="connectors.folder.formats"></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Webhooks</legend>
+            <p class="muted">JSON POSTs signed with <code>X-Verbatim-Signature: sha256=HMAC(secret, timestamp + "." + body)</code>.</p>
+            <div id="webhooks"></div>
+            <button type="button" id="webhook-add" class="ghost">Add webhook</button>
+          </fieldset>
+
+          <div class="row sticky-save">
+            <button type="submit" class="primary">Save settings</button>
+            <span id="settings-status" class="muted"></span>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,25 @@
+[package]
+name = "verbatim-app"
+description = "Meeting transcription with OneDrive, webhook and folder connectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+verbatim-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+[features]
+metal = ["verbatim-core/metal"]
+vulkan = ["verbatim-core/vulkan"]
+cuda = ["verbatim-core/cuda"]

@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ""
+            cli_name: verbatim-cli-linux-x86_64
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin --features metal"
+            cli_name: verbatim-cli-macos-arm64
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libpulse-dev libclang-dev cmake
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build and publish app bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Verbatim ${{ github.ref_name }}"
+          releaseBody: "See the README for setup. macOS builds are ad-hoc signed (not notarized): after installing, run `xattr -dr com.apple.quarantine /Applications/Verbatim.app`."
+          releaseDraft: false
+          prerelease: false
+          tauriScript: bun run tauri
+          args: ${{ matrix.args }}
+
+      - name: Build and upload CLI
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          features=""
+          if [ "$RUNNER_OS" = "macOS" ]; then features="--features verbatim-core/metal"; fi
+          cargo build --release -p verbatim-cli --target ${{ matrix.target }} $features
+          tar -czf ${{ matrix.cli_name }}.tar.gz -C target/${{ matrix.target }}/release verbatim
+          gh release upload "${GITHUB_REF_NAME}" ${{ matrix.cli_name }}.tar.gz --clobber
