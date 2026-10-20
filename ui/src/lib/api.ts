@@ -61,11 +61,6 @@ export interface Config {
     whisper: { model: string; language: string; threads: number };
     deepgram: { api_key: string; model: string; language: string };
   };
-  accounts: {
-    microsoft: { client_id: string; tenant: string };
-    google: { client_id: string; client_secret: string };
-    dropbox: { app_key: string };
-  };
   calendar: { mode: AutoRecord; google: boolean; microsoft: boolean };
   connectors: {
     folder: { enabled: boolean; path: string; formats: ExportFormat[] };
@@ -112,10 +107,11 @@ export interface ModelStatus {
   bundled: boolean;
 }
 
-export interface DeviceLogin {
-  user_code: string;
-  verification_uri: string;
-  expires_in: number;
+/** Services whose sign-in works without the user's own app registration in this build. */
+export interface BuiltinAccounts {
+  microsoft: boolean;
+  google: boolean;
+  dropbox: boolean;
 }
 
 export type SessionEvent =
@@ -127,13 +123,6 @@ export type SessionEvent =
   | { type: "finished"; transcript_id: string }
   | { type: "delivery"; result: DeliveryResult }
   | { type: "done"; transcript_id: string };
-
-export interface LoginResult {
-  provider: "microsoft";
-  ok: boolean;
-  account: string | null;
-  error: string | null;
-}
 
 export interface ModelProgress {
   name: string;
@@ -159,26 +148,25 @@ export const api = {
   deliverTranscript: (id: string) => invoke<DeliveryResult[]>("deliver_transcript", { id }),
   listModels: () => invoke<ModelStatus[]>("list_models"),
   downloadModel: (name: string) => invoke<void>("download_model", { name }),
+  builtinAccounts: () => invoke<BuiltinAccounts>("builtin_accounts"),
+  /** Each login opens the browser and resolves with the account once the user approves. */
   microsoftStatus: () => invoke<string | null>("microsoft_status"),
-  microsoftLogin: () => invoke<DeviceLogin>("microsoft_login"),
+  microsoftLogin: () => invoke<string>("microsoft_login"),
   microsoftLogout: () => invoke<void>("microsoft_logout"),
   googleStatus: () => invoke<string | null>("google_status"),
   googleLogin: () => invoke<string>("google_login"),
   googleLogout: () => invoke<void>("google_logout"),
   dropboxStatus: () => invoke<string | null>("dropbox_status"),
-  dropboxBeginLogin: () => invoke<{ url: string; verifier: string }>("dropbox_begin_login"),
-  dropboxFinishLogin: (verifier: string, code: string) => invoke<string>("dropbox_finish_login", { verifier, code }),
+  dropboxLogin: () => invoke<string>("dropbox_login"),
   dropboxLogout: () => invoke<void>("dropbox_logout"),
+  /** Aborts the sign-in that is waiting for the browser. */
+  cancelLogin: () => invoke<void>("cancel_login"),
   upcomingMeetings: () => invoke<CalendarSnapshot>("upcoming_meetings"),
   testWebhook: (index: number) => invoke<string>("test_webhook", { index }),
 };
 
 export function onSession(handler: (event: SessionEvent) => void): Promise<UnlistenFn> {
   return listen<SessionEvent>("session", (e) => handler(e.payload));
-}
-
-export function onLogin(handler: (result: LoginResult) => void): Promise<UnlistenFn> {
-  return listen<LoginResult>("account-login", (e) => handler(e.payload));
 }
 
 export function onModelProgress(handler: (p: ModelProgress) => void): Promise<UnlistenFn> {

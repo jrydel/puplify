@@ -199,9 +199,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Command::Microsoft { command: SignInCommand::Login } => {
-            let code = microsoft::begin_login(&cfg.accounts.microsoft).await?;
-            println!("{}", code.message);
-            let account = microsoft::finish_login(&cfg.accounts.microsoft, &code).await?;
+            let account = microsoft::login(announce_and_open).await?;
             println!("Signed in as {account}");
             if !cfg.connectors.onedrive.enabled && !cfg.calendar.microsoft {
                 println!(
@@ -214,11 +212,7 @@ async fn main() -> Result<()> {
         Command::Microsoft { command: SignInCommand::Status } => print_status(microsoft::status()?),
         Command::Microsoft { command: SignInCommand::Logout } => microsoft::logout(),
         Command::Google { command: SignInCommand::Login } => {
-            let account = google::login(&cfg.accounts.google, |url| {
-                println!("Opening your browser to sign in to Google. If it does not open, visit:\n\n{url}\n");
-                open_browser(url);
-            })
-            .await?;
+            let account = google::login(announce_and_open).await?;
             println!("Signed in as {account}");
             if !cfg.connectors.google_drive.enabled && !cfg.calendar.google {
                 println!(
@@ -231,13 +225,7 @@ async fn main() -> Result<()> {
         Command::Google { command: SignInCommand::Status } => print_status(google::status()?),
         Command::Google { command: SignInCommand::Logout } => google::logout(),
         Command::Dropbox { command: SignInCommand::Login } => {
-            let pending = dropbox::begin_login(&cfg.accounts.dropbox)?;
-            println!("Open this URL, approve access, and paste the code Dropbox shows:\n\n{}\n", pending.url);
-            print!("Code: ");
-            std::io::stdout().flush()?;
-            let mut code = String::new();
-            std::io::stdin().read_line(&mut code).context("reading the code from stdin")?;
-            let account = dropbox::finish_login(&cfg.accounts.dropbox, &pending.verifier, &code).await?;
+            let account = dropbox::login(announce_and_open).await?;
             println!("Signed in as {account}");
             if !cfg.connectors.dropbox.enabled {
                 println!("Note: Dropbox export is disabled; set connectors.dropbox.enabled = true in {}", Config::path()?.display());
@@ -317,6 +305,12 @@ fn print_status(account: Option<String>) -> Result<()> {
         None => println!("Not signed in"),
     }
     Ok(())
+}
+
+/// Sign-in `open_url` callback: tell the user where to go and open the browser.
+fn announce_and_open(url: &str) {
+    println!("Opening your browser… If it doesn't open, visit: {url}");
+    open_browser(url);
 }
 
 /// Best effort: the sign-in URL is also printed, so failures are ignored.

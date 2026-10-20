@@ -13,51 +13,72 @@ use crate::paths;
 pub struct Config {
     pub capture: CaptureConfig,
     pub stt: SttConfig,
-    pub accounts: AccountsConfig,
     pub calendar: CalendarConfig,
     pub connectors: ConnectorsConfig,
 }
 
-/// Sign-in settings for the cloud accounts Puplify can connect to. One
-/// account serves every feature that needs it (e.g. Microsoft: OneDrive
-/// export and calendar).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct AccountsConfig {
-    pub microsoft: MicrosoftAccount,
-    pub google: GoogleAccount,
-    pub dropbox: DropboxAccount,
-}
+/// OAuth app registrations baked into official builds at compile time: the
+/// release workflow (or a developer's shell) exports these env vars before
+/// `cargo build`. Unset or empty (unset GitHub variables expand to empty
+/// strings) means the build has no registration for that service.
+pub mod builtin {
+    const fn non_empty(v: Option<&'static str>) -> Option<&'static str> {
+        match v {
+            Some(s) if !s.is_empty() => Some(s),
+            _ => None,
+        }
+    }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct MicrosoftAccount {
-    /// Application (client) ID of your Microsoft Entra app registration.
-    pub client_id: String,
-    /// `common` accepts both personal and work/school accounts.
-    pub tenant: String,
-}
+    /// A Google registration needs both halves; one without the other is unusable.
+    const fn pair(id: Option<&'static str>, secret: Option<&'static str>) -> Option<(&'static str, &'static str)> {
+        match (non_empty(id), non_empty(secret)) {
+            (Some(id), Some(secret)) => Some((id, secret)),
+            _ => None,
+        }
+    }
 
-impl Default for MicrosoftAccount {
-    fn default() -> Self {
-        Self { client_id: String::new(), tenant: "common".into() }
+    pub const MICROSOFT_CLIENT_ID: Option<&str> = non_empty(option_env!("PUPLIFY_MICROSOFT_CLIENT_ID"));
+    pub const GOOGLE_CLIENT_ID: Option<&str> = non_empty(option_env!("PUPLIFY_GOOGLE_CLIENT_ID"));
+    pub const GOOGLE_CLIENT_SECRET: Option<&str> = non_empty(option_env!("PUPLIFY_GOOGLE_CLIENT_SECRET"));
+    /// Google client ID and secret, present only when both are set.
+    pub const GOOGLE_CREDENTIALS: Option<(&str, &str)> = pair(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+    pub const DROPBOX_APP_KEY: Option<&str> = non_empty(option_env!("PUPLIFY_DROPBOX_APP_KEY"));
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn empty_values_count_as_absent() {
+            assert_eq!(non_empty(None), None);
+            assert_eq!(non_empty(Some("")), None);
+            assert_eq!(non_empty(Some("id")), Some("id"));
+        }
+
+        #[test]
+        fn google_needs_both_halves() {
+            assert_eq!(pair(Some("id"), Some("secret")), Some(("id", "secret")));
+            assert_eq!(pair(Some("id"), None), None);
+            assert_eq!(pair(Some("id"), Some("")), None);
+            assert_eq!(pair(None, Some("secret")), None);
+        }
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct GoogleAccount {
-    /// OAuth client ID of type "Desktop app".
-    pub client_id: String,
-    /// Google requires the client secret in token requests, even for desktop apps.
-    pub client_secret: String,
+/// Which services this build ships a registration for, i.e. which Connect buttons work.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct BuiltinAccounts {
+    pub microsoft: bool,
+    pub google: bool,
+    pub dropbox: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct DropboxAccount {
-    /// App key from the Dropbox App Console.
-    pub app_key: String,
+pub fn builtin_accounts() -> BuiltinAccounts {
+    BuiltinAccounts {
+        microsoft: builtin::MICROSOFT_CLIENT_ID.is_some(),
+        google: builtin::GOOGLE_CREDENTIALS.is_some(),
+        dropbox: builtin::DROPBOX_APP_KEY.is_some(),
+    }
 }
 
 /// What to do when an online meeting is in progress and another app starts using the microphone.
@@ -366,30 +387,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accounts_and_calendar_defaults() {
+    fn calendar_and_connector_defaults() {
         let cfg: Config = serde_json::from_str("{}").unwrap();
-        assert_eq!(cfg.accounts.microsoft.tenant, "common");
         assert_eq!(cfg.calendar.mode, AutoRecord::Auto);
         assert!(!cfg.calendar.google && !cfg.calendar.microsoft);
         assert_eq!(cfg.connectors.onedrive.folder, "Transcripts");
     }
 
     #[test]
-    fn partial_account_sections_keep_other_defaults() {
+    fn partial_sections_keep_other_defaults() {
         let cfg: Config = serde_json::from_str(
-            r#"{ "accounts": { "google": { "client_id": "id" } },
-                 "calendar": { "mode": "ask", "microsoft": true },
+            r#"{ "calendar": { "mode": "ask", "microsoft": true },
                  "connectors": { "dropbox": { "enabled": true } } }"#,
         )
         .unwrap();
-        assert_eq!(cfg.accounts.google.client_id, "id");
-        assert_eq!(cfg.accounts.google.client_secret, "");
-        assert_eq!(cfg.accounts.microsoft, MicrosoftAccount::default());
         assert_eq!(cfg.calendar.mode, AutoRecord::Ask);
         assert!(cfg.calendar.microsoft);
         assert!(cfg.connectors.dropbox.enabled);
         assert_eq!(cfg.connectors.dropbox.folder, "/Transcripts");
         let json = serde_json::to_value(&cfg).unwrap();
         assert_eq!(json["calendar"]["mode"], "ask");
+    }
+
+    #[test]
+    fn legacy_accounts_table_is_ignored() {
+        let cfg: Config = serde_json::from_str(
+            r#"{ "accounts": { "microsoft": { "client_id": "x", "tenant": "common" },
+                               "google": { "client_id": "id", "client_secret": "s" },
+                               "dropbox": { "app_key": "k" } },
+                 "calendar": { "google": true } }"#,
+        )
+        .unwrap();
+        assert!(cfg.calendar.google);
+        assert!(serde_json::to_value(&cfg).unwrap().get("accounts").is_none());
+    }
+
+    #[test]
+    fn builtin_accounts_match_compiled_in_values() {
+        let b = builtin_accounts();
+        assert_eq!(b.microsoft, builtin::MICROSOFT_CLIENT_ID.is_some());
+        assert_eq!(b.google, builtin::GOOGLE_CREDENTIALS.is_some());
+        assert_eq!(b.dropbox, builtin::DROPBOX_APP_KEY.is_some());
     }
 }

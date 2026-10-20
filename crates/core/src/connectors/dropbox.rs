@@ -1,14 +1,15 @@
-//! Dropbox upload. Sign-in uses OAuth 2 with PKCE and no redirect: the user
-//! opens the authorize URL, approves, and pastes the code Dropbox shows. No app
-//! secret is needed. Tokens are stored in the config directory with mode 0600.
+//! Dropbox upload. Sign-in uses OAuth 2 with PKCE over a loopback redirect on a
+//! fixed port (Dropbox requires the exact redirect URI to be registered in the
+//! app). No app secret is needed. Tokens are stored in the config directory
+//! with mode 0600.
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::oauth::{self, http, http_error, oauth_error, pkce_challenge, pkce_verifier, TokenResponse};
-use crate::config::{DropboxAccount, DropboxConfig};
+use super::oauth::{self, authorize, http, http_error, oauth_error, pkce_challenge, pkce_verifier, Loopback, TokenResponse};
+use crate::config::{builtin, DropboxConfig};
 use crate::transcript::Transcript;
 
 const AUTHORIZE_URL: &str = "https://www.dropbox.com/oauth2/authorize";
@@ -18,14 +19,8 @@ const UPLOAD_URL: &str = "https://content.dropboxapi.com/2/files/upload";
 const TOKEN_FILE: &str = "dropbox-token.json";
 /// Dropbox simple uploads are limited to 150 MiB.
 const UPLOAD_MAX: usize = 150 * 1024 * 1024;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PendingLogin {
-    /// Open this in a browser, approve, and copy the code Dropbox shows.
-    pub url: String,
-    /// PKCE code verifier; pass it back to `finish_login`.
-    pub verifier: String,
-}
+/// Dropbox needs the redirect URI registered exactly, so the loopback port is fixed.
+const REDIRECT_PORT: u16 = 53682;
 
 #[derive(Serialize, Deserialize)]
 struct StoredToken {
@@ -36,11 +31,9 @@ struct StoredToken {
     expires_at: DateTime<Utc>,
 }
 
-fn app_key(cfg: &DropboxAccount) -> Result<&str> {
-    match cfg.app_key.trim() {
-        "" => bail!("Dropbox app key is not set (see README: Dropbox setup)"),
-        key => Ok(key),
-    }
+/// The app key baked into this build.
+fn app_key() -> Result<&'static str> {
+    builtin::DROPBOX_APP_KEY.context("Dropbox sign-in isn't available in this build of Puplify")
 }
 
 fn load_token() -> Result<Option<StoredToken>> {
@@ -60,40 +53,34 @@ pub fn logout() -> Result<()> {
     oauth::remove_token(TOKEN_FILE)
 }
 
-/// Step 1: build the authorize URL and a fresh PKCE verifier.
-pub fn begin_login(cfg: &DropboxAccount) -> Result<PendingLogin> {
-    let app_key = app_key(cfg)?;
+/// Interactive sign-in. Binds the fixed loopback port, hands the authorize URL
+/// to `open_url` (which should show it to the user / open a browser), waits up
+/// to five minutes for Dropbox's redirect and exchanges the code for tokens.
+/// Returns the account email.
+pub async fn login(open_url: impl FnOnce(&str) + Send) -> Result<String> {
+    let app_key = app_key()?;
     let verifier = pkce_verifier();
-    let url = format!(
-        "{AUTHORIZE_URL}?client_id={}&response_type=code&code_challenge={}&code_challenge_method=S256&token_access_type=offline",
-        urlencoding::encode(app_key),
-        pkce_challenge(&verifier),
-    );
-    Ok(PendingLogin { url, verifier })
-}
+    let challenge = pkce_challenge(&verifier);
+    let target = Loopback { label: "Dropbox", host: "localhost", port: Some(REDIRECT_PORT), path: "/" };
+    let (code, redirect_uri) =
+        authorize(target, |redirect_uri, state| authorize_url(app_key, redirect_uri, state, &challenge), open_url).await?;
 
-/// Step 2: exchange the pasted code for tokens. Returns the account email.
-pub async fn finish_login(cfg: &DropboxAccount, verifier: &str, code: &str) -> Result<String> {
     let client = http()?;
-    let app_key = app_key(cfg)?;
-    let code = code.trim();
-    if code.is_empty() {
-        bail!("no authorization code entered");
-    }
     let resp = client
         .post(TOKEN_URL)
         .form(&[
             ("grant_type", "authorization_code"),
-            ("code", code),
-            ("code_verifier", verifier),
+            ("code", code.as_str()),
+            ("code_verifier", verifier.as_str()),
             ("client_id", app_key),
+            ("redirect_uri", redirect_uri.as_str()),
         ])
         .send()
         .await?;
     if !resp.status().is_success() {
-        bail!("Dropbox sign-in failed (the code may be wrong or expired): {}", oauth_error(resp).await);
+        bail!("Dropbox sign-in failed: {}", oauth_error(resp).await);
     }
-    let token: TokenResponse = resp.json().await?;
+    let token: TokenResponse = resp.json().await.context("unexpected Dropbox sign-in response")?;
     let account = fetch_account(&client, &token.access_token).await?;
     save_token(&StoredToken {
         app_key: app_key.to_string(),
@@ -103,6 +90,20 @@ pub async fn finish_login(cfg: &DropboxAccount, verifier: &str, code: &str) -> R
         access_token: token.access_token,
     })?;
     Ok(account)
+}
+
+fn authorize_url(app_key: &str, redirect_uri: &str, state: &str, challenge: &str) -> String {
+    let params = [
+        ("client_id", app_key),
+        ("response_type", "code"),
+        ("redirect_uri", redirect_uri),
+        ("code_challenge", challenge),
+        ("code_challenge_method", "S256"),
+        ("token_access_type", "offline"),
+        ("state", state),
+    ];
+    let query: Vec<String> = params.iter().map(|(k, v)| format!("{k}={}", urlencoding::encode(v))).collect();
+    format!("{AUTHORIZE_URL}?{}", query.join("&"))
 }
 
 async fn fetch_account(client: &reqwest::Client, access_token: &str) -> Result<String> {
@@ -118,9 +119,9 @@ async fn fetch_account(client: &reqwest::Client, access_token: &str) -> Result<S
 }
 
 /// Valid access token, refreshing (and persisting it) when needed.
-async fn access_token(cfg: &DropboxAccount, client: &reqwest::Client) -> Result<String> {
+async fn access_token(client: &reqwest::Client) -> Result<String> {
     let mut token = load_token()?.context("not signed in to Dropbox")?;
-    if token.app_key != app_key(cfg)? {
+    if token.app_key != app_key()? {
         bail!("Dropbox app key changed since sign-in; sign in again");
     }
     if token.expires_at > Utc::now() + chrono::Duration::seconds(120) {
@@ -197,12 +198,12 @@ async fn upload(client: &reqwest::Client, token: &str, path: &str, bytes: Vec<u8
 }
 
 /// Uploads the transcript in each configured format; returns the Dropbox paths.
-pub async fn export(cfg: &DropboxConfig, account: &DropboxAccount, transcript: &Transcript) -> Result<String> {
+pub async fn export(cfg: &DropboxConfig, transcript: &Transcript) -> Result<String> {
     if cfg.formats.is_empty() {
         bail!("no Dropbox formats selected");
     }
     let client = http()?;
-    let token = access_token(account, &client).await?;
+    let token = access_token(&client).await?;
     let stem = transcript.file_stem();
     let mut paths = Vec::new();
     for &format in &cfg.formats {
@@ -217,19 +218,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn login_url_carries_challenge_for_generated_verifier() {
-        let account = DropboxAccount { app_key: "my key".into() };
-        let pending = begin_login(&account).unwrap();
-        assert!((43..=128).contains(&pending.verifier.len()));
-        assert!(pending.url.starts_with("https://www.dropbox.com/oauth2/authorize?client_id=my%20key&"));
-        assert!(pending.url.contains(&format!("code_challenge={}&", pkce_challenge(&pending.verifier))));
-        assert!(pending.url.ends_with("&token_access_type=offline"));
+    fn authorize_url_has_required_parameters() {
+        let verifier = pkce_verifier();
+        let url = authorize_url("my key", "http://localhost:53682/", "st", &pkce_challenge(&verifier));
+        assert!(url.starts_with("https://www.dropbox.com/oauth2/authorize?client_id=my%20key&response_type=code&"));
+        assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A53682%2F&"));
+        assert!(url.contains(&format!("code_challenge={}&code_challenge_method=S256&", pkce_challenge(&verifier))));
+        assert!(url.ends_with("&token_access_type=offline&state=st"));
     }
 
-    #[test]
-    fn begin_login_requires_app_key() {
-        let err = begin_login(&DropboxAccount::default()).unwrap_err().to_string();
-        assert!(err.contains("app key"), "{err}");
+    #[tokio::test]
+    async fn login_requires_builtin_app_key() {
+        // Skipped when this build bakes in an app key: login would then really open a browser.
+        if builtin::DROPBOX_APP_KEY.is_some() {
+            return;
+        }
+        let err = login(|_| panic!("must not open a browser")).await.unwrap_err();
+        assert!(err.to_string().contains("isn't available in this build of Puplify"), "{err}");
     }
 
     #[test]

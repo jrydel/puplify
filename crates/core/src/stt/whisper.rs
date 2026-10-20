@@ -221,6 +221,7 @@ const MAX_INITIAL_FLOOR: f32 = 0.02;
 const MIN_SPEECH_RMS: f32 = 0.004;
 
 /// Energy-based utterance segmenter with an adaptive noise floor.
+#[derive(Default)]
 pub(crate) struct Chunker {
     buf: Vec<f32>,
     buf_start: u64,
@@ -229,19 +230,6 @@ pub(crate) struct Chunker {
     silence_frames: usize,
     /// Minimum-tracking estimate of background noise RMS.
     noise_floor: Option<f32>,
-}
-
-impl Default for Chunker {
-    fn default() -> Self {
-        Self {
-            buf: Vec::new(),
-            buf_start: 0,
-            pending: Vec::new(),
-            speech_frames: 0,
-            silence_frames: 0,
-            noise_floor: None,
-        }
-    }
 }
 
 impl Chunker {

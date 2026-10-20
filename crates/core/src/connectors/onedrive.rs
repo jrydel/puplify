@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::microsoft::{self, GRAPH};
 use super::oauth::http;
-use crate::config::{MicrosoftAccount, OneDriveConfig};
+use crate::config::OneDriveConfig;
 use crate::transcript::Transcript;
 
 /// Graph simple upload limit; larger files use an upload session.
@@ -77,12 +77,12 @@ async fn upload(client: &reqwest::Client, token: &str, path: &str, bytes: Vec<u8
 }
 
 /// Uploads the transcript in each configured format; returns the web URLs.
-pub async fn export(cfg: &OneDriveConfig, account: &MicrosoftAccount, transcript: &Transcript) -> Result<String> {
+pub async fn export(cfg: &OneDriveConfig, transcript: &Transcript) -> Result<String> {
     if cfg.formats.is_empty() {
         bail!("no OneDrive formats selected");
     }
     let client = http()?;
-    let token = microsoft::access_token(account, &client).await?;
+    let token = microsoft::access_token(&client).await?;
     let folder = cfg.folder.trim().trim_matches('/');
     let stem = transcript.file_stem();
     let mut urls = Vec::new();

@@ -905,6 +905,34 @@ pre code {
   color: var(--graphite);
 }
 
+/* ---------- privacy ---------- */
+
+.doc {
+  max-width: 46rem;
+  padding-block: clamp(3rem, 8vw, 6rem);
+}
+.doc .lede {
+  margin-top: 1.25rem;
+}
+.doc h2 {
+  margin-top: 2.75rem;
+  font-size: clamp(1.35rem, 2.4vw, 1.7rem);
+}
+.doc p,
+.doc ul {
+  margin-top: 1rem;
+  line-height: 1.65;
+}
+.doc ul {
+  padding-left: 1.25rem;
+}
+.doc li + li {
+  margin-top: 0.5rem;
+}
+.doc a {
+  color: var(--me);
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 62rem) {

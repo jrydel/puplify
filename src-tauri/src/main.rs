@@ -4,10 +4,12 @@
 mod autopilot;
 mod recorder;
 
+use std::future::Future;
+
 use puplify_core::{
     audio::{self, DeviceInfo},
     calendar,
-    config::Config,
+    config::{self, BuiltinAccounts, Config},
     connectors::{self, dropbox, google, microsoft, webhook, DeliveryResult},
     store::{self, TranscriptSummary},
     stt::models::{self, ModelStatus},
@@ -16,6 +18,8 @@ use puplify_core::{
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
+use tokio::sync::Mutex;
+use tokio::task::AbortHandle;
 
 use autopilot::CalendarSnapshot;
 use recorder::{AppState, Origin, RecordingInfo};
@@ -44,21 +48,34 @@ struct ModelProgress {
     total: Option<u64>,
 }
 
-/// Outcome of a background Microsoft sign-in, emitted as `account-login`.
-#[derive(Clone, Serialize)]
-struct LoginResult {
-    provider: &'static str,
-    ok: bool,
-    account: Option<String>,
-    error: Option<String>,
+/// The browser sign-in currently waiting for its redirect, so a newer
+/// attempt or "Cancel" can abort it (which also frees its local port).
+#[derive(Default)]
+struct PendingLogin(Mutex<Option<AbortHandle>>);
+
+/// Runs a browser sign-in to completion unless it is cancelled.
+async fn browser_login(
+    pending: &PendingLogin,
+    login: impl Future<Output = anyhow::Result<String>> + Send + 'static,
+) -> CmdResult<String> {
+    let task = tokio::spawn(login);
+    if let Some(previous) = pending.0.lock().await.replace(task.abort_handle()) {
+        previous.abort();
+    }
+    match task.await {
+        Ok(result) => result.map_err(anyhow_err),
+        Err(e) if e.is_cancelled() => Err("sign-in cancelled".into()),
+        Err(e) => Err(err(e)),
+    }
 }
 
-/// Code the user enters on the provider's sign-in page.
-#[derive(Serialize)]
-struct DeviceLogin {
-    user_code: String,
-    verification_uri: String,
-    expires_in: u64,
+/// Opens `url` in the default browser.
+fn browser_opener(app: AppHandle) -> impl FnOnce(&str) + Send + 'static {
+    move |url| {
+        if let Err(e) = app.opener().open_url(url, None::<&str>) {
+            tracing::warn!("opening the browser: {e}");
+        }
+    }
 }
 
 #[tauri::command]
@@ -178,28 +195,28 @@ async fn download_model(app: AppHandle, name: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
+fn builtin_accounts() -> BuiltinAccounts {
+    config::builtin_accounts()
+}
+
+#[tauri::command]
+async fn cancel_login(pending: State<'_, PendingLogin>) -> CmdResult<()> {
+    if let Some(task) = pending.0.lock().await.take() {
+        task.abort();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn microsoft_status() -> CmdResult<Option<String>> {
     microsoft::status().map_err(anyhow_err)
 }
 
-/// Starts device-code sign-in; the outcome arrives as an `account-login` event.
+/// Opens Microsoft's sign-in page and waits for the redirect back to
+/// Puplify (up to five minutes). Returns the account name.
 #[tauri::command]
-async fn microsoft_login(app: AppHandle) -> CmdResult<DeviceLogin> {
-    let cfg = Config::load().map_err(anyhow_err)?.accounts.microsoft;
-    let code = microsoft::begin_login(&cfg).await.map_err(anyhow_err)?;
-    let view = DeviceLogin {
-        user_code: code.user_code.clone(),
-        verification_uri: code.verification_uri.clone(),
-        expires_in: code.expires_in,
-    };
-    tauri::async_runtime::spawn(async move {
-        let result = match microsoft::finish_login(&cfg, &code).await {
-            Ok(account) => LoginResult { provider: "microsoft", ok: true, account: Some(account), error: None },
-            Err(e) => LoginResult { provider: "microsoft", ok: false, account: None, error: Some(format!("{e:#}")) },
-        };
-        let _ = app.emit("account-login", result);
-    });
-    Ok(view)
+async fn microsoft_login(app: AppHandle, pending: State<'_, PendingLogin>) -> CmdResult<String> {
+    browser_login(&pending, microsoft::login(browser_opener(app))).await
 }
 
 #[tauri::command]
@@ -212,18 +229,10 @@ fn google_status() -> CmdResult<Option<String>> {
     google::status().map_err(anyhow_err)
 }
 
-/// Opens Google's sign-in page in the browser and waits for the redirect
-/// back to Puplify (up to five minutes). Returns the account email.
+/// Opens Google's sign-in page and waits for the redirect back to Puplify.
 #[tauri::command]
-async fn google_login(app: AppHandle) -> CmdResult<String> {
-    let cfg = Config::load().map_err(anyhow_err)?.accounts.google;
-    google::login(&cfg, move |url| {
-        if let Err(e) = app.opener().open_url(url, None::<&str>) {
-            tracing::warn!("opening the browser: {e}");
-        }
-    })
-    .await
-    .map_err(anyhow_err)
+async fn google_login(app: AppHandle, pending: State<'_, PendingLogin>) -> CmdResult<String> {
+    browser_login(&pending, google::login(browser_opener(app))).await
 }
 
 #[tauri::command]
@@ -236,17 +245,10 @@ fn dropbox_status() -> CmdResult<Option<String>> {
     dropbox::status().map_err(anyhow_err)
 }
 
-/// Returns the authorization URL and PKCE verifier; the user pastes back the code.
+/// Opens Dropbox's sign-in page and waits for the redirect back to Puplify.
 #[tauri::command]
-fn dropbox_begin_login() -> CmdResult<dropbox::PendingLogin> {
-    let cfg = Config::load().map_err(anyhow_err)?.accounts.dropbox;
-    dropbox::begin_login(&cfg).map_err(anyhow_err)
-}
-
-#[tauri::command]
-async fn dropbox_finish_login(verifier: String, code: String) -> CmdResult<String> {
-    let cfg = Config::load().map_err(anyhow_err)?.accounts.dropbox;
-    dropbox::finish_login(&cfg, &verifier, code.trim()).await.map_err(anyhow_err)
+async fn dropbox_login(app: AppHandle, pending: State<'_, PendingLogin>) -> CmdResult<String> {
+    browser_login(&pending, dropbox::login(browser_opener(app))).await
 }
 
 #[tauri::command]
@@ -282,6 +284,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
+        .manage(PendingLogin::default())
         .setup(|app| {
             // Whisper + VAD models shipped inside the bundle (see bundle.resources).
             match app.path().resource_dir() {
@@ -308,14 +311,15 @@ fn main() {
             list_models,
             download_model,
             microsoft_status,
+            builtin_accounts,
+            cancel_login,
             microsoft_login,
             microsoft_logout,
             google_status,
             google_login,
             google_logout,
             dropbox_status,
-            dropbox_begin_login,
-            dropbox_finish_login,
+            dropbox_login,
             dropbox_logout,
             upcoming_meetings,
             test_webhook,

@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use super::google;
 use super::oauth::{http, http_error};
-use crate::config::{GoogleAccount, GoogleDriveConfig};
+use crate::config::GoogleDriveConfig;
 use crate::transcript::Transcript;
 
 const API: &str = "https://www.googleapis.com/drive/v3";
@@ -113,12 +113,12 @@ async fn upload(
 }
 
 /// Uploads the transcript in each configured format; returns the web links.
-pub async fn export(cfg: &GoogleDriveConfig, account: &GoogleAccount, transcript: &Transcript) -> Result<String> {
+pub async fn export(cfg: &GoogleDriveConfig, transcript: &Transcript) -> Result<String> {
     if cfg.formats.is_empty() {
         bail!("no Google Drive formats selected");
     }
     let client = http()?;
-    let token = google::access_token(account, &client).await?;
+    let token = google::access_token(&client).await?;
     let folder = ensure_folder(&client, &token, &cfg.folder).await?;
     let stem = transcript.file_stem();
     let mut links = Vec::new();

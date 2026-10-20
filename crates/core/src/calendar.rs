@@ -55,7 +55,7 @@ pub async fn upcoming(cfg: &Config, ahead: Duration) -> (Vec<Meeting>, Vec<Strin
             return None;
         }
         Some(match google::status() {
-            Ok(Some(_)) => fetch_google(cfg, &client, from, to).await,
+            Ok(Some(_)) => fetch_google(&client, from, to).await,
             Ok(None) => Err(anyhow::anyhow!("calendar is enabled but no Google account is connected")),
             Err(e) => Err(e),
         })
@@ -65,7 +65,7 @@ pub async fn upcoming(cfg: &Config, ahead: Duration) -> (Vec<Meeting>, Vec<Strin
             return None;
         }
         Some(match microsoft::status() {
-            Ok(Some(_)) => fetch_microsoft(cfg, &client, from, to).await,
+            Ok(Some(_)) => fetch_microsoft(&client, from, to).await,
             Ok(None) => Err(anyhow::anyhow!("calendar is enabled but no Microsoft account is connected")),
             Err(e) => Err(e),
         })
@@ -121,8 +121,8 @@ fn rfc3339(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-async fn fetch_google(cfg: &Config, client: &reqwest::Client, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<Meeting>> {
-    let token = google::access_token(&cfg.accounts.google, client).await?;
+async fn fetch_google(client: &reqwest::Client, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<Meeting>> {
+    let token = google::access_token(client).await?;
     let resp = client
         .get(GOOGLE_EVENTS)
         .query(&[
@@ -139,7 +139,7 @@ async fn fetch_google(cfg: &Config, client: &reqwest::Client, from: DateTime<Utc
         let forbidden = resp.status() == reqwest::StatusCode::FORBIDDEN;
         let err = http_error(resp).await;
         if forbidden {
-            bail!("{err} (sign in again to grant calendar access, and check that the Google Calendar API is enabled for your project)");
+            bail!("{err} (sign in again to grant calendar access)");
         }
         bail!("{err}");
     }
@@ -147,8 +147,8 @@ async fn fetch_google(cfg: &Config, client: &reqwest::Client, from: DateTime<Utc
     Ok(google_meetings(&body))
 }
 
-async fn fetch_microsoft(cfg: &Config, client: &reqwest::Client, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<Meeting>> {
-    let token = microsoft::access_token(&cfg.accounts.microsoft, client).await?;
+async fn fetch_microsoft(client: &reqwest::Client, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<Meeting>> {
+    let token = microsoft::access_token(client).await?;
     // `$`-prefixed OData options are kept literal; Graph does not reliably accept them percent-encoded.
     let url = format!(
         "{}/me/calendarView?startDateTime={}&endDateTime={}&$select=id,subject,start,end,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,location,bodyPreview&$top=50",
@@ -166,7 +166,7 @@ async fn fetch_microsoft(cfg: &Config, client: &reqwest::Client, from: DateTime<
         let forbidden = resp.status() == reqwest::StatusCode::FORBIDDEN;
         let err = http_error(resp).await;
         if forbidden {
-            bail!("{err} (sign in again to grant calendar access, and check that the app registration has the Calendars.Read permission)");
+            bail!("{err} (sign in again to grant calendar access)");
         }
         bail!("{err}");
     }

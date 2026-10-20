@@ -141,96 +141,105 @@ Accelerate framework; the `metal` feature currently fails to link (missing clang
    other people from your speakers, and their words show up twice (once as Me).
 3. **Accounts, Destinations, Calendar**: connect the accounts you use in **Settings → Accounts**,
    turn on where finished transcripts should go in **Settings → Destinations**, and optionally
-   enable [calendar auto-recording](#calendar-auto-recording) in **Settings → Calendar** (setup for
-   each below).
+   enable [calendar auto-recording](#calendar-auto-recording) in **Settings → Calendar** (details
+   for each below).
 4. Click **New recording → Start recording**. The meters show both sources are live. Click
    **Stop** when the meeting ends; the transcript is saved and then sent to every destination.
 
 On macOS the first recording triggers two permission prompts: Microphone, and Screen & System Audio
 Recording. After granting the second one, restart the app.
 
-## Microsoft setup (OneDrive and Outlook calendar)
+## Microsoft (OneDrive and Outlook calendar)
 
-One Microsoft sign-in serves both OneDrive export and the Outlook/Microsoft 365 calendar. It needs a
-Microsoft Entra app registration. It's free, takes about 3 minutes, and the app's client ID stays
-yours:
+One Microsoft sign-in serves both OneDrive export and the Outlook/Microsoft 365 calendar. Click
+**Settings → Accounts → Connect Microsoft**: your browser opens, you pick your account (personal or
+work/school) and approve, and you're done. From a terminal: `puplify microsoft login` (prints the
+URL and tries to open it). Puplify requests `Files.ReadWrite`, `Calendars.Read`, `User.Read` and
+`offline_access`.
 
-1. Go to <https://entra.microsoft.com> → **App registrations** → **New registration**.
-   - Name: `Puplify`
-   - Supported account types: **Accounts in any organizational directory and personal Microsoft
-     accounts**. This allows both personal and work/school accounts.
-   - Redirect URI: leave empty.
-2. Open the new app → **Authentication** → **Advanced settings** → set **Allow public client
-   flows** to **Yes** → Save. This is required for device-code sign-in.
-3. **API permissions** → Add → Microsoft Graph → Delegated: `Files.ReadWrite`, `Calendars.Read`,
-   `User.Read`, `offline_access`. In work tenants that need it, an admin must grant consent.
-4. Copy the **Application (client) ID** from **Overview**.
-5. In the app: **Settings → Accounts → Microsoft** → paste the client ID → **Connect Microsoft**.
-   A browser page opens; enter the code shown in the app and approve. From a terminal:
-   `puplify microsoft login`.
-6. To upload transcripts: **Settings → Destinations → OneDrive** → turn it on, choose a folder
-   (default `Transcripts`) and file formats, then **Save changes**. To use the calendar, see
-   [Calendar auto-recording](#calendar-auto-recording).
+To upload transcripts: **Settings → Destinations → OneDrive** → turn it on, choose a folder
+(default `Transcripts`) and file formats, then **Save changes**. To use the calendar, see
+[Calendar auto-recording](#calendar-auto-recording).
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending replaces the existing file. Tokens are
 stored in `microsoft-token.json` in the config directory (mode 0600) and refresh automatically.
 
-Single-tenant only? Put your tenant ID or domain in **Tenant** instead of `common`.
+## Google (Drive and Calendar)
 
-## Google setup (Drive and Calendar)
+One Google sign-in serves both Google Drive export and Google Calendar. Click **Settings → Accounts
+→ Connect Google**: your browser opens Google's consent page; approve it and keep every permission
+checkbox ticked. Google then redirects to a temporary local address (`http://127.0.0.1:<port>`) so
+Puplify can finish the sign-in. From a terminal: `puplify google login` (prints the URL and tries
+to open it). For Drive, Puplify only requests the `drive.file` scope, so it can see just the folder
+and files it creates, never the rest of your Drive. For the calendar it requests
+`calendar.readonly`.
 
-One Google sign-in serves both Google Drive export and Google Calendar. It needs your own OAuth
-client. It's free and takes about 5 minutes. For Drive, Puplify only requests the `drive.file`
-scope, so it can see just the folder and files it creates, never the rest of your Drive. For the
-calendar it requests `calendar.readonly`.
-
-1. Go to <https://console.cloud.google.com> and create a project (or pick an existing one).
-2. **APIs & Services → Library** → enable **Google Drive API** and **Google Calendar API**.
-3. **APIs & Services → OAuth consent screen** (Google Auth Platform → Branding/Audience): choose
-   **External**, fill in the app name and your email, and add your own Google account as a **test
-   user**. Under **Data Access** (scopes) add `.../auth/drive.file` and
-   `.../auth/calendar.readonly`.
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Application type
-   **Desktop app**.
-5. Copy the **Client ID** and **Client secret**. Google requires the secret even for desktop
-   apps; it is stored in `config.json` (mode 0600).
-6. In the app: **Settings → Accounts → Google** → paste both values → **Connect Google**. Your
-   browser opens Google's consent page and, after you approve, redirects to a temporary local
-   address (`http://127.0.0.1:<port>`) so Puplify can finish the sign-in; keep every permission
-   checkbox ticked. From a terminal: `puplify google login` (prints the URL and tries to open it).
-7. To upload transcripts: **Settings → Destinations → Google Drive** → turn it on, choose a folder
-   name (default `Transcripts`, created in My Drive on first use) and file formats, then **Save
-   changes**. To use the calendar, see [Calendar auto-recording](#calendar-auto-recording).
-
-Google treats `calendar.readonly` as a **sensitive scope**. While the consent screen is in *Testing*
-mode only the listed test users can sign in and Google expires the sign-in after 7 days (sign in
-again). Publishing the app removes the expiry, but until Google verifies it the consent page shows an
-"unverified app" warning (**Advanced → Go to … (unsafe)**); verification is only needed if other
-people will use your client.
+To upload transcripts: **Settings → Destinations → Google Drive** → turn it on, choose a folder
+name (default `Transcripts`, created in My Drive on first use) and file formats, then **Save
+changes**. To use the calendar, see [Calendar auto-recording](#calendar-auto-recording).
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending updates the existing file instead of adding
 a copy. Tokens are stored in `google-token.json` in the config directory (mode 0600) and refresh
 automatically.
 
-## Dropbox setup
+## Dropbox
 
-Dropbox access needs a (free) app in the Dropbox App Console. Sign-in uses PKCE, so there is no
-app secret to keep:
+Click **Settings → Accounts → Connect Dropbox**: your browser opens, you approve, and you're signed
+in. Sign-in uses a temporary local redirect on port 53682, so keep that port free while connecting.
+From a terminal: `puplify dropbox login` (prints the URL and tries to open it).
 
-1. Go to <https://www.dropbox.com/developers/apps> → **Create app**.
-2. Choose **Scoped access**, then **App folder** (Puplify only sees its own folder under
-   `Apps/`) or **Full Dropbox**. Name the app.
-3. **Permissions** tab: enable `files.content.write` and `account_info.read`, then **Submit**.
-4. **Settings** tab: copy the **App key**.
-5. In the app: **Settings → Accounts → Dropbox** → paste the app key → **Connect Dropbox**.
-   Approve on the Dropbox page and paste the code it shows. From a terminal:
-   `puplify dropbox login`.
-6. **Settings → Destinations → Dropbox** → turn it on, choose a folder (default `/Transcripts`) and
-   file formats, then **Save changes**.
+Then **Settings → Destinations → Dropbox** → turn it on, choose a folder (default `/Transcripts`)
+and file formats, then **Save changes**.
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending overwrites the existing file. With an App
 folder app, the folder is relative to it. Tokens are stored in `dropbox-token.json` in the config
 directory (mode 0600) and refresh automatically.
+
+## Maintainers: built-in app registrations
+
+Puplify has no per-user setup: sign-in uses OAuth app registrations that the maintainers create once
+and bake into the binary at compile time. They are read from these environment variables (unset or
+empty means that service's **Connect** button reports that sign-in isn't available in this build):
+
+| Variable | Value |
+| --- | --- |
+| `PUPLIFY_MICROSOFT_CLIENT_ID` | Microsoft Entra application (client) ID |
+| `PUPLIFY_GOOGLE_CLIENT_ID` | Google OAuth client ID (type Desktop app) |
+| `PUPLIFY_GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `PUPLIFY_DROPBOX_APP_KEY` | Dropbox app key |
+
+`release.yml` reads them from the repository variables `PUPLIFY_MICROSOFT_CLIENT_ID`,
+`PUPLIFY_GOOGLE_CLIENT_ID` and `PUPLIFY_DROPBOX_APP_KEY`, and from the repository secret
+`PUPLIFY_GOOGLE_CLIENT_SECRET`. Google requires the secret even for desktop apps, so it ends up in
+the binary and is not confidential.
+
+**Local and development builds** get sign-in by exporting the same variables before compiling, e.g.
+`PUPLIFY_MICROSOFT_CLIENT_ID=<id> cargo build -p puplify-cli` or `export` them before
+`bun run dev` / `bun run build`. Cargo rebuilds when they change.
+
+Registering the three apps (all free):
+
+- **Microsoft**: <https://entra.microsoft.com> → **App registrations** → **New registration**.
+  Supported account types: **Accounts in any organizational directory and personal Microsoft
+  accounts**. Redirect URI: platform **Mobile and desktop applications**, value `http://localhost`
+  (Microsoft accepts any port for it; no client secret and no "Allow public client flows" needed).
+  **API permissions** → Microsoft Graph → Delegated: `Files.ReadWrite`, `Calendars.Read`,
+  `User.Read`, `offline_access`. Work/school tenants that block user consent need an admin to
+  approve the app unless it has a verified publisher. Copy the **Application (client) ID**.
+- **Google**: <https://console.cloud.google.com> → create a project → enable **Google Drive API**
+  and **Google Calendar API**. **OAuth consent screen** (Google Auth Platform): **External**, app
+  name, support email, privacy policy <https://puplify.com/privacy>, and scopes `.../auth/drive.file`
+  and `.../auth/calendar.readonly`. **Credentials → Create credentials → OAuth client ID**,
+  application type **Desktop app** (no redirect URI to configure). Copy the client ID and secret.
+- **Dropbox**: <https://www.dropbox.com/developers/apps> → **Create app** → **Scoped access** →
+  **App folder** (Puplify only sees its own folder under `Apps/`) or **Full Dropbox**. **Permissions**
+  tab: `files.content.write` and `account_info.read`, then **Submit**. **Settings** tab: add the
+  redirect URI `http://localhost:53682/` (Dropbox requires an exact match) and copy the **App key**.
+  Dropbox apps are limited to a small number of users until you apply for production status.
+
+**Google verification:** `calendar.readonly` is a sensitive scope. Until the app passes Google's
+verification, users see an "unverified app" warning and at most 100 users can sign in. The privacy
+policy for the consent screen is at <https://puplify.com/privacy>.
 
 ## Calendar auto-recording
 

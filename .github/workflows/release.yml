@@ -27,6 +27,13 @@ jobs:
             args: ""
             cli_name: puplify-cli-windows-x86_64
     runs-on: ${{ matrix.platform }}
+    # Puplify's own OAuth app registrations, compiled into the app and CLI so
+    # "Connect" works without users registering apps (see README: Maintainers).
+    env:
+      PUPLIFY_MICROSOFT_CLIENT_ID: ${{ vars.PUPLIFY_MICROSOFT_CLIENT_ID }}
+      PUPLIFY_GOOGLE_CLIENT_ID: ${{ vars.PUPLIFY_GOOGLE_CLIENT_ID }}
+      PUPLIFY_GOOGLE_CLIENT_SECRET: ${{ secrets.PUPLIFY_GOOGLE_CLIENT_SECRET }}
+      PUPLIFY_DROPBOX_APP_KEY: ${{ vars.PUPLIFY_DROPBOX_APP_KEY }}
     steps:
       - uses: actions/checkout@v4
 
