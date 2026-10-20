@@ -1,0 +1,7 @@
+node_modules
+.wrangler
+worker-configuration.d.ts
+public/app.js
+public/fonts
+public/icon.svg
+public/apple-touch-icon.png

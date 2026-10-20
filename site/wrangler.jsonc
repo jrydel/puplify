@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "puplify-site",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-20",
+  "account_id": "6c8959f08233cb34a0bbfa8e664f6648",
+  "build": {
+    "command": "bun run build"
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "routes": [
+    { "pattern": "puplify.com", "custom_domain": true },
+    { "pattern": "www.puplify.com", "custom_domain": true }
+  ],
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  }
+}

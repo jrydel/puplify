@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Puplify — meeting transcripts, word for word</title>
+  <meta name="description" content="Puplify records your microphone and the call's audio, transcribes live on your machine or with Deepgram, and saves plain text to OneDrive, Drive, Dropbox, Notion or a webhook. Linux, macOS, Windows.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F3F5F7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0E1218" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://puplify.com/">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Puplify">
+  <meta property="og:title" content="Puplify — meeting transcripts, word for word">
+  <meta property="og:description" content="Records your mic and the call's audio. Transcribes live, locally or in the cloud. Saves plain text wherever you keep things. No bot joins the meeting.">
+  <meta property="og:url" content="https://puplify.com/">
+  <meta property="og:image" content="https://puplify.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Two lanes, Me and Them, filling with speech blocks as a meeting is transcribed.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Puplify — meeting transcripts, word for word">
+  <meta name="twitter:description" content="Records your mic and the call's audio. Transcribes live, locally or in the cloud. Saves plain text wherever you keep things.">
+  <meta name="twitter:image" content="https://puplify.com/og.png">
+  <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/hanken-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap top-row">
+      <a class="brand" href="/" aria-label="Puplify home">
+        <img src="/icon.svg" alt="" width="28" height="28">
+        <span>Puplify</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a class="nav-link nav-wide" href="#transcripts">Transcripts</a>
+        <a class="nav-link nav-wide" href="#engines">Engines</a>
+        <a class="nav-link nav-wide" href="#destinations">Send to</a>
+        <a class="nav-link nav-wide" href="#cli">CLI</a>
+        <a class="nav-link" href="https://github.com/jrydel/puplify">GitHub</a>
+        <a class="btn btn-small" href="#download">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap">
+        <p class="eyebrow">Meeting transcriber for Linux, macOS and Windows</p>
+        <h1 id="hero-title">Meeting transcripts, <span class="nowrap">word for word.</span></h1>
+        <div class="hero-foot">
+          <p class="lede">Puplify listens to your microphone and to the call's audio, writes down what is said as it's said, and saves it as plain text. No bot joins the meeting. No summary rewrites it.</p>
+          <div class="cta-block">
+            <div class="cta" id="cta">
+              <a class="btn btn-primary" href="#download">Download Puplify</a>
+              <a class="btn btn-quiet" href="#download">All platforms</a>
+            </div>
+            <p class="cta-note" id="cta-note">Free and open source.</p>
+          </div>
+        </div>
+      </div>
+
+      <figure class="deck" id="deck" aria-label="A short budget meeting being transcribed: lines from Me and Them appear as their blocks fill each lane.">
+        <div class="wrap">
+          <div class="deck-bar">
+            <div class="deck-title">
+              <span class="deck-name">Weekly sync</span>
+              <span class="rec" id="rec" data-state="idle"><span class="rec-dot" aria-hidden="true"></span><span class="rec-text" id="rec-text">REC 00:00</span></span>
+            </div>
+            <div class="deck-side">
+              <span class="engine">whisper.cpp · on this machine</span>
+              <button class="replay" id="replay" type="button" hidden>Replay</button>
+            </div>
+          </div>
+
+          <div class="tape" id="tape" aria-hidden="true" style="--T:56">
+            <div class="lane lane-me"><span class="lane-name"><i></i>Me</span>
+              <div class="track">
+                <span class="blk" data-i="0" style="--s:3;--d:4"></span>
+                <span class="blk" data-i="2" style="--s:13.5;--d:4.5"></span>
+                <span class="blk" data-i="4" style="--s:24.5;--d:1.5"></span>
+                <span class="blk" data-i="5" style="--s:28;--d:4.5"></span>
+                <span class="blk" data-i="7" style="--s:39.5;--d:5.5"></span>
+              </div>
+            </div>
+            <div class="lane lane-them"><span class="lane-name"><i></i>Them</span>
+              <div class="track">
+                <span class="blk" data-i="1" style="--s:7;--d:5.5"></span>
+                <span class="blk" data-i="3" style="--s:18.5;--d:7.5"></span>
+                <span class="blk" data-i="6" style="--s:33.5;--d:5.5"></span>
+                <span class="blk" data-i="8" style="--s:45.5;--d:6"></span>
+              </div>
+            </div>
+            <div class="axis">
+              <span class="lane-name"></span>
+              <div class="track">
+                <span class="tick" style="--s:0">0:00</span>
+                <span class="tick" style="--s:10">0:10</span>
+                <span class="tick" style="--s:20">0:20</span>
+                <span class="tick" style="--s:30">0:30</span>
+                <span class="tick" style="--s:40">0:40</span>
+                <span class="tick" style="--s:50">0:50</span>
+              </div>
+            </div>
+            <div class="head-rail"><span class="lane-name"></span><div class="track"><span class="head" id="head"></span></div></div>
+          </div>
+
+          <ol class="lines" id="lines">
+            <li data-i="0" class="me"><span class="t">[00:00:03]</span><span class="who"><i></i>Me:</span><span class="say">Morning. Shall we start with the budget?</span></li>
+            <li data-i="1" class="them"><span class="t">[00:00:07]</span><span class="who"><i></i>Them:</span><span class="say">Yes. We're about ten percent over on contractors.</span></li>
+            <li data-i="2" class="me"><span class="t">[00:00:13]</span><span class="who"><i></i>Me:</span><span class="say">Is that the Q3 invoices, or is something new?</span></li>
+            <li data-i="3" class="them"><span class="t">[00:00:18]</span><span class="who"><i></i>Them:</span><span class="say">Mostly Q3. Two invoices landed late, so they hit this month.</span></li>
+            <li data-i="4" class="me"><span class="t">[00:00:24]</span><span class="who"><i></i>Me:</span><span class="say">Right.</span></li>
+            <li data-i="5" class="me"><span class="t">[00:00:28]</span><span class="who"><i></i>Me:</span><span class="say">Can we move the vendor review to Thursday?</span></li>
+            <li data-i="6" class="them"><span class="t">[00:00:33]</span><span class="who"><i></i>Them:</span><span class="say">Thursday works. I'll send the revised numbers tonight.</span></li>
+            <li data-i="7" class="me"><span class="t">[00:00:39]</span><span class="who"><i></i>Me:</span><span class="say">Good. I'll freeze the remaining contractor hours until then.</span></li>
+            <li data-i="8" class="them"><span class="t">[00:00:45]</span><span class="who"><i></i>Them:</span><span class="say">That should pull us back on plan by March.</span></li>
+          </ol>
+          <p class="saved" id="saved" aria-hidden="true"><span class="file">weekly-sync.txt</span> saved, then sent where you told it to.</p>
+        </div>
+      </figure>
+    </section>
+
+    <section class="block" id="transcripts" aria-labelledby="t-title">
+      <div class="wrap split">
+        <div class="split-head">
+          <p class="eyebrow">Who said what</p>
+          <h2 id="t-title">Two sources, two tracks.</h2>
+          <p class="sub">Puplify never guesses who is talking. It listens in two places and labels each line by where the sound came from.</p>
+        </div>
+        <dl class="ledger">
+          <div class="row">
+            <dt><span class="pill pill-me" aria-hidden="true"></span>Microphone</dt>
+            <dd><strong>Me.</strong> Everything you say, as you say it. Wear headphones, or your mic also hears the other side and their words show up twice.</dd>
+          </div>
+          <div class="row">
+            <dt><span class="pill pill-them" aria-hidden="true"></span>System audio</dt>
+            <dd><strong>Them.</strong> Whatever the call plays: Zoom, Meet, Teams, a browser tab. Overlapping speech stays on its own track, so cross-talk doesn't get tangled.</dd>
+          </div>
+          <div class="row">
+            <dt>Labels</dt>
+            <dd>Rename <em>Me</em> and <em>Them</em> in Settings. Saved transcripts use your names.</dd>
+          </div>
+          <div class="row">
+            <dt>Output</dt>
+            <dd>Timestamp, speaker, words. Saved as <code>.txt</code>, <code>.md</code> or <code>.json</code>. No summary, no action items, nothing rewritten.</dd>
+          </div>
+          <div class="row">
+            <dt>Bots</dt>
+            <dd>None. Nothing joins the call. Puplify is an app on your computer listening to your computer.</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="block" id="engines" aria-labelledby="e-title">
+      <div class="wrap split">
+        <div class="split-head">
+          <p class="eyebrow">Transcription engine</p>
+          <h2 id="e-title">Keep it on your machine, or stream it.</h2>
+          <p class="sub">Choose one in Settings. Switch whenever you like.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="compare">
+            <thead>
+              <tr><td></td><th scope="col">Local</th><th scope="col">Cloud</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Engine</th><td data-label="Local">whisper.cpp, with Silero VAD so silence never turns into invented text.</td><td data-label="Cloud">Deepgram <span class="nowrap">Nova-3</span>.</td></tr>
+              <tr><th scope="row">Audio leaves your computer</th><td data-label="Local">Never. Works offline.</td><td data-label="Cloud">Yes, streamed to Deepgram.</td></tr>
+              <tr><th scope="row">Speed</th><td data-label="Local">Text appears a few seconds after each pause.</td><td data-label="Cloud">Live partial results while people are still talking.</td></tr>
+              <tr><th scope="row">Speaker labels</th><td data-label="Local">Me and Them, by audio source.</td><td data-label="Cloud">Mic and system audio travel as two channels, so labels stay exact.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="destinations" aria-labelledby="d-title">
+      <div class="wrap split">
+        <div class="split-head">
+          <p class="eyebrow">When the meeting ends</p>
+          <h2 id="d-title">Sent where you already keep things.</h2>
+          <p class="sub">Stop recording and the transcript goes to every destination you've switched on. It's autosaved while you record, and any stored transcript can be re-sent later.</p>
+        </div>
+        <div class="dest">
+          <ul class="dest-list">
+            <li><strong>OneDrive</strong><span>Personal and work or school accounts.</span></li>
+            <li><strong>Google Drive</strong><span>A folder in My Drive.</span></li>
+            <li><strong>Dropbox</strong><span>Any Dropbox folder.</span></li>
+            <li><strong>Notion</strong><span>One page per transcript.</span></li>
+            <li><strong>A local folder</strong><span>A synced folder, or an Obsidian vault.</span></li>
+            <li><strong>Any webhook</strong><span>Zapier, n8n, Make, your own server.</span></li>
+          </ul>
+          <div class="code" role="group" aria-label="Webhook events">
+            <p class="code-cap">Webhook events</p>
+<pre><code><span class="k">recording.started</span>     a recording begins
+<span class="k">transcript.segment</span>    each line, live
+<span class="k">recording.completed</span>   the full text
+
+<span class="dim">JSON over POST, HMAC-signed</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="cli" aria-labelledby="c-title">
+      <div class="wrap split">
+        <div class="split-head">
+          <p class="eyebrow">Command line</p>
+          <h2 id="c-title">No window required.</h2>
+          <p class="sub">The same engine as a single binary. Record from a terminal, transcribe a WAV file, script the rest.</p>
+        </div>
+        <div class="term" role="group" aria-label="Example commands">
+<pre><code><span class="prompt">$</span> puplify record --title "Weekly sync"
+<span class="prompt">$</span> puplify transcribe standup.wav
+<span class="prompt">$</span> puplify list
+<span class="prompt">$</span> puplify show &lt;id&gt; --format md
+<span class="prompt">$</span> puplify deliver &lt;id&gt;</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="download" aria-labelledby="dl-title">
+      <div class="wrap">
+        <div class="dl-head">
+          <div>
+            <p class="eyebrow">Free · open source (MIT)</p>
+            <h2 id="dl-title">Download Puplify</h2>
+          </div>
+          <p class="version" id="version">Latest release on GitHub</p>
+        </div>
+
+        <div class="dl-grid">
+          <div class="dl-group">
+            <h3>Desktop app</h3>
+            <ul class="dl-list">
+              <li data-platform="mac"><div class="dl-what"><strong>macOS</strong><span>Apple Silicon, macOS 13 or newer</span></div><code class="dl-ext">.dmg</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/mac">Download<span class="sr"> for macOS</span></a></li>
+              <li data-platform="windows"><div class="dl-what"><strong>Windows</strong><span>64-bit installer</span></div><code class="dl-ext">.exe</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/windows">Download<span class="sr"> for Windows</span></a></li>
+              <li data-platform="deb"><div class="dl-what"><strong>Linux · deb</strong><span>Debian, Ubuntu</span></div><code class="dl-ext">.deb</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/deb">Download<span class="sr"> the .deb package</span></a></li>
+              <li data-platform="rpm"><div class="dl-what"><strong>Linux · rpm</strong><span>Fedora, RHEL, openSUSE</span></div><code class="dl-ext">.rpm</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/rpm">Download<span class="sr"> the .rpm package</span></a></li>
+              <li data-platform="appimage"><div class="dl-what"><strong>Linux · AppImage</strong><span>Any distribution</span></div><code class="dl-ext">.AppImage</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/appimage">Download<span class="sr"> the AppImage</span></a></li>
+            </ul>
+          </div>
+          <div class="dl-group">
+            <h3>Command line only</h3>
+            <ul class="dl-list">
+              <li data-platform="cli-linux"><div class="dl-what"><strong>Linux x86_64</strong><span>puplify binary</span></div><code class="dl-ext">.tar.gz</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/cli-linux">Download<span class="sr"> the Linux CLI</span></a></li>
+              <li data-platform="cli-mac"><div class="dl-what"><strong>macOS arm64</strong><span>puplify binary</span></div><code class="dl-ext">.tar.gz</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/cli-mac">Download<span class="sr"> the macOS CLI</span></a></li>
+              <li data-platform="cli-windows"><div class="dl-what"><strong>Windows x86_64</strong><span>puplify.exe</span></div><code class="dl-ext">.zip</code><span class="dl-size" data-size></span><a class="btn btn-small" href="/download/cli-windows">Download<span class="sr"> the Windows CLI</span></a></li>
+            </ul>
+
+            <div class="notes">
+              <h3>Before you start</h3>
+              <p><strong>macOS.</strong> The build is not notarized and runs on Apple Silicon only (Intel Macs: build from source). After dragging Puplify to Applications, run this once:</p>
+              <div class="copy">
+                <code id="xattr">xattr -dr com.apple.quarantine /Applications/Puplify.app</code>
+                <button class="copy-btn" id="copy-xattr" type="button">Copy</button>
+              </div>
+              <p>The first recording asks for Microphone and Screen &amp; System Audio Recording access. Allow both, then restart Puplify.</p>
+              <p><strong>Linux.</strong> Needs PipeWire (with <code>pipewire-pulse</code>) or PulseAudio.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-row">
+      <p>Puplify is free software under the MIT license.</p>
+      <ul>
+        <li><a href="https://github.com/jrydel/puplify">GitHub</a></li>
+        <li><a href="https://github.com/jrydel/puplify/releases">Releases</a></li>
+        <li><a href="https://github.com/jrydel/puplify/issues">Issues</a></li>
+      </ul>
+    </div>
+  </footer>
+</body>
+</html>

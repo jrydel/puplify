@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="/style.css">
+<style>
+  html{font-size:16px;scroll-behavior:auto}
+  body{width:1200px;height:630px;overflow:hidden;padding:56px 72px;display:flex;flex-direction:column;justify-content:space-between;background:var(--paper)}
+  .b{display:flex;align-items:center;gap:16px;font:600 34px/1 var(--display);letter-spacing:-.02em}
+  .b img{width:52px;height:52px;border-radius:12px}
+  h1{font-size:104px;line-height:.94;max-width:none}
+  .tape{--label:84px;--T:56}
+  .lane{height:76px}
+  .blk{height:40px}
+  .lane-name{font-size:20px}
+  .u{font:400 22px/1 var(--mono);color:var(--graphite)}
+</style></head>
+<body>
+<div class="b"><img src="/icon.svg" alt=""><span>Puplify</span></div>
+<h1>Meeting transcripts, word for word.</h1>
+<div>
+<div class="tape">
+  <div class="lane lane-me"><span class="lane-name"><i></i>Me</span><div class="track">
+    <span class="blk" style="--s:3;--d:4"></span><span class="blk" style="--s:13.5;--d:4.5"></span><span class="blk" style="--s:24.5;--d:1.5"></span><span class="blk" style="--s:28;--d:4.5"></span><span class="blk" style="--s:39.5;--d:5.5"></span></div></div>
+  <div class="lane lane-them"><span class="lane-name"><i></i>Them</span><div class="track">
+    <span class="blk" style="--s:7;--d:5.5"></span><span class="blk" style="--s:18.5;--d:7.5"></span><span class="blk" style="--s:33.5;--d:5.5"></span><span class="blk" style="--s:45.5;--d:6"></span></div></div>
+</div>
+<p class="u" style="margin:20px 0 0">puplify.com</p>
+</div>
+</body></html>

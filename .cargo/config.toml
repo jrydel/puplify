@@ -1,0 +1,9 @@
+# screencapturekit's Swift bridge links the Swift runtime (libswift_Concurrency
+# etc.), which ships with macOS under /usr/lib/swift. The crate's own
+# `rustc-link-arg` only applies to its own targets, so every binary in this
+# workspace (app, CLI, tests) needs the rpath here or it aborts at launch.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,/usr/lib/swift"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,/usr/lib/swift"]
