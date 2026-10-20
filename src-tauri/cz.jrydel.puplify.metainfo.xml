@@ -46,6 +46,11 @@
     <binary>puplify-app</binary>
   </provides>
   <releases>
+    <release version="0.5.0" date="2026-10-20">
+      <description>
+        <p>Records any call when another app takes the microphone, reads calendars from a private iCal link without signing in, and updates itself in one click.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-20">
       <description>
         <p>Records meetings from your Google or Outlook calendar automatically, with Accounts and Calendar settings.</p>
