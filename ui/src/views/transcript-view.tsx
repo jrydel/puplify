@@ -35,6 +35,8 @@ export function TranscriptView({ id, onChanged, onDeleted }: TranscriptViewProps
   const [data, setData] = useState<{ transcript: Transcript; text: string } | null>(null);
   const [title, setTitle] = useState("");
   const [sending, setSending] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [deliveries, setDeliveries] = useState<DeliveryResult[]>([]);
   const body = useRef<TranscriptBodyHandle>(null);
 
@@ -101,13 +103,20 @@ export function TranscriptView({ id, onChanged, onDeleted }: TranscriptViewProps
     }
   }
 
+  /**
+   * The dialog stays open (blurred backdrop and all) until the file is gone;
+   * the parent then drops the sidebar row and leaves this page in one render,
+   * so the screen changes once instead of in three steps.
+   */
   async function remove() {
+    setDeleting(true);
     try {
       await api.deleteTranscript(id);
-      toast.success("Transcript deleted");
       onDeleted();
+      toast.success("Transcript deleted");
     } catch (e) {
       toast.error(errorText(e));
+      setDeleting(false);
     }
   }
 
@@ -153,7 +162,7 @@ export function TranscriptView({ id, onChanged, onDeleted }: TranscriptViewProps
               {sending ? <Spinner data-icon="inline-start" /> : <SendIcon data-icon="inline-start" />}
               Send again
             </Button>
-            <AlertDialog>
+            <AlertDialog open={confirmDelete} onOpenChange={(open) => !deleting && setConfirmDelete(open)}>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="sm" aria-label="Delete transcript">
                   <Trash2Icon />
@@ -168,8 +177,16 @@ export function TranscriptView({ id, onChanged, onDeleted }: TranscriptViewProps
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Keep it</AlertDialogCancel>
-                  <AlertDialogAction variant="destructive" onClick={remove}>
+                  <AlertDialogCancel disabled={deleting}>Keep it</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={deleting}
+                    onClick={(e) => {
+                      e.preventDefault(); // close only after the delete, in the same render as leaving
+                      remove();
+                    }}
+                  >
+                    {deleting && <Spinner data-icon="inline-start" />}
                     Delete transcript
                   </AlertDialogAction>
                 </AlertDialogFooter>

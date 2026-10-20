@@ -163,7 +163,8 @@ export default function App() {
             id={view.id}
             onChanged={refreshHistory}
             onDeleted={() => {
-              refreshHistory();
+              // Same render as leaving the page, so the sidebar doesn't change a frame later.
+              setHistory((items) => items.filter((t) => t.id !== view.id));
               setView({ kind: "record" });
             }}
           />
