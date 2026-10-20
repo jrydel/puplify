@@ -81,6 +81,7 @@ export interface ModelStatus {
   name: string;
   size_mb: number;
   downloaded: boolean;
+  bundled: boolean;
 }
 
 export interface DeviceLogin {

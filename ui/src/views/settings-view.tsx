@@ -235,7 +235,7 @@ function TranscriptionTab({
                       <SelectItem key={m.name} value={m.name}>
                         <span className="font-mono">{m.name}</span>
                         <span className="text-muted-foreground">
-                          {m.size_mb} MB{m.downloaded ? " · downloaded" : ""}
+                          {m.size_mb} MB{m.bundled ? " · included" : m.downloaded ? " · downloaded" : ""}
                         </span>
                       </SelectItem>
                     ))}
@@ -259,9 +259,10 @@ function TranscriptionTab({
               </div>
             )}
             <FieldDescription>
-              <span className="font-mono">base.en</span> is fast on any computer;{" "}
-              <span className="font-mono">small.en</span> and <span className="font-mono">large-v3-turbo-q5_0</span> are
-              more accurate. Models without <span className="font-mono">.en</span> handle other languages.
+              <span className="font-mono">base-q5_1</span> comes with Puplify and is fast on any computer. For better
+              accuracy download <span className="font-mono">small-q5_1</span> or{" "}
+              <span className="font-mono">large-v3-turbo-q5_0</span>. Models ending in{" "}
+              <span className="font-mono">.en</span> understand English only.
             </FieldDescription>
           </Field>
           <Field>
@@ -270,10 +271,13 @@ function TranscriptionTab({
               id="language"
               value={draft.stt.whisper.language}
               onChange={(e) => edit((c) => (c.stt.whisper.language = e.target.value))}
-              placeholder="en"
+              placeholder="auto"
               className="max-w-40"
             />
-            <FieldDescription>Two-letter code such as en, de or cs, or auto to detect.</FieldDescription>
+            <FieldDescription>
+              Two-letter code such as cs, en or de. auto detects the language, but can misjudge short phrases, so set it if
+              your meetings are in one language.
+            </FieldDescription>
           </Field>
         </>
       ) : (

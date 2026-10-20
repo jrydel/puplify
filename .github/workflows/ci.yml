@@ -25,9 +25,15 @@ jobs:
             patchelf libpulse-dev libclang-dev cmake
       - name: Test core
         run: cargo test -p puplify-core
-      - name: Build UI
+      - name: Cache bundled models
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/resources/models
+          key: bundled-models-${{ hashFiles('scripts/fetch-models.ts') }}
+      - name: Build UI and fetch bundled models
         run: |
           bun install --frozen-lockfile
           bun run build:ui
+          bun run fetch:models
       - name: Build CLI and app
         run: cargo build -p puplify-cli -p puplify-app

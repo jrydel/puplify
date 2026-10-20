@@ -11,7 +11,7 @@ use puplify_core::{
     Transcript,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, Mutex};
 
 /// Errors cross the IPC boundary as display strings.
@@ -290,6 +290,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .setup(|app| {
+            // Whisper + VAD models shipped inside the bundle (see bundle.resources).
+            match app.path().resource_dir() {
+                Ok(dir) => models::set_bundled_dir(dir.join("models")),
+                Err(e) => tracing::warn!("no resource dir; bundled models unavailable: {e}"),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,

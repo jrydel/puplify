@@ -3367,7 +3367,7 @@ dependencies = [
 
 [[package]]
 name = "puplify-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "puplify-core",
@@ -3377,12 +3377,13 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "puplify-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3395,7 +3396,7 @@ dependencies = [
 
 [[package]]
 name = "puplify-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

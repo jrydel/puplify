@@ -130,9 +130,12 @@ Accelerate framework; the `metal` feature currently fails to link (missing clang
 ## First run
 
 1. Open **Settings → Transcription**.
-   - **Local**: pick a model and click **Download model**. `base.en` (142 MB) is fast on any CPU.
-     `small.en` or `large-v3-turbo-q5_0` are more accurate. For other languages, pick a model
-     without `.en` and set the language (or `auto`).
+   - **Local**: works out of the box. The installers include `base-q5_1` (multilingual Whisper
+     base, 57 MB) and the Silero VAD model, so the first recording needs no download. For better
+     accuracy pick `small-q5_1` or `large-v3-turbo-q5_0` and click **Download**; downloaded models
+     are stored in the data directory. Language defaults to `auto`; set it (e.g. `cs`, `en`) if
+     your meetings are in one language, because auto-detection can misjudge short phrases. The
+     standalone CLI doesn't include models: `puplify models download base-q5_1`.
    - **Deepgram**: paste an API key from <https://console.deepgram.com>.
 2. **Audio**: keep both sources on. Wear headphones if you can; otherwise the mic also picks up the
    other people from your speakers, and their words show up twice (once as Me).

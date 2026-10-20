@@ -75,8 +75,8 @@ pub struct WhisperConfig {
 impl Default for WhisperConfig {
     fn default() -> Self {
         Self {
-            model: "base.en".into(),
-            language: "en".into(),
+            model: crate::stt::models::BUNDLED_MODEL.into(),
+            language: "auto".into(),
             threads: 0,
         }
     }
