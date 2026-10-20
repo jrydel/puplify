@@ -51,7 +51,15 @@ separate lanes; click any block to jump to that part of the text.
 
 ## Install
 
-Download from [Releases](https://github.com/jrydel/puplify/releases/latest):
+Download from [puplify.com](https://puplify.com/#download) or
+[Releases](https://github.com/jrydel/puplify/releases/latest). On macOS the quickest way is:
+
+```sh
+curl -fsSL https://puplify.com/install.sh | sh
+```
+
+It downloads the latest `.dmg`, copies Puplify into Applications and opens it. Files fetched with
+`curl` aren't quarantined, so there's no Gatekeeper prompt.
 
 | Platform | File |
 |---|---|
@@ -62,9 +70,25 @@ Download from [Releases](https://github.com/jrydel/puplify/releases/latest):
 | Windows | `Puplify_<version>_x64-setup.exe` (or the `.msi`) |
 | CLI only | `puplify-cli-linux-x86_64.tar.gz`, `puplify-cli-macos-arm64.tar.gz`, `puplify-cli-windows-x86_64.zip` |
 
-The macOS build is ad-hoc signed, not notarized. After dragging it to Applications, run
-`xattr -dr com.apple.quarantine /Applications/Puplify.app` once. Intel Macs: build from source.
-The Windows installer is unsigned, so SmartScreen asks for confirmation (**More info → Run anyway**).
+The macOS `.dmg` is ad-hoc signed, not notarized. If you install it by hand, run
+`xattr -dr com.apple.quarantine /Applications/Puplify.app` once (or **System Settings → Privacy &
+Security → Open Anyway**). Intel Macs: build from source. The Windows installer is unsigned, so
+SmartScreen asks for confirmation (**More info → Run anyway**).
+
+### Signed and notarized macOS releases
+
+The release workflow signs with a Developer ID and notarizes automatically once these repository
+secrets exist (Settings → Secrets and variables → Actions). That removes the Gatekeeper prompt and
+keeps macOS permissions across updates. It needs a paid Apple Developer account.
+
+| Secret | Value |
+|---|---|
+| `APPLE_CERTIFICATE` | Developer ID Application certificate exported as `.p12`, base64-encoded (`base64 -i cert.p12`) |
+| `APPLE_CERTIFICATE_PASSWORD` | Password of that `.p12` |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Jiří Rýdel (TEAMID1234)` |
+| `APPLE_ID` | Apple ID email of the developer account |
+| `APPLE_PASSWORD` | App-specific password from <https://account.apple.com> |
+| `APPLE_TEAM_ID` | 10-character team ID |
 
 ## Build dependencies
 

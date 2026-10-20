@@ -168,11 +168,21 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function downloadButton(platform: string, label: string, latest: Latest | null): HTMLAnchorElement {
-  const a = el("a", "btn btn-primary", label);
+/** Hero download buttons in a fixed order; the visitor's OS gets the filled style. */
+const HERO_PLATFORMS = [
+  { os: "mac", platform: "mac", label: "macOS" },
+  { os: "windows", platform: "windows", label: "Windows" },
+  { os: "linux", platform: "appimage", label: "Linux" },
+] as const;
+
+function downloadButton(platform: string, label: string, latest: Latest | null, primary: boolean): HTMLAnchorElement {
+  const a = el("a", primary ? "btn btn-primary" : "btn btn-quiet", label);
   a.href = `/download/${platform}`;
   const asset = latest?.assets[platform];
-  if (asset) a.append(el("span", "btn-meta", `${latest?.version ? `v${latest.version} · ` : ""}${formatSize(asset.size)}`));
+  // Version and size only on the visitor's own platform keeps the row compact.
+  if (primary && asset) {
+    a.append(el("span", "btn-meta", `${latest?.version ? `v${latest.version} · ` : ""}${formatSize(asset.size)}`));
+  }
   return a;
 }
 
@@ -184,30 +194,25 @@ function renderCta(os: Os, latest: Latest | null): void {
   all.href = "#download";
   note.replaceChildren();
 
+  if (os === "mobile") {
+    cta.replaceChildren(all);
+    note.textContent = "Puplify is a desktop app. Open this page on your Mac, PC or Linux machine.";
+    return;
+  }
+
+  cta.replaceChildren(
+    ...HERO_PLATFORMS.map((p) => downloadButton(p.platform, p.label, latest, p.os === os)),
+    all,
+  );
   switch (os) {
     case "mac":
-      cta.replaceChildren(downloadButton("mac", "Download for macOS", latest), all);
-      note.append("Apple Silicon only. Not notarized: one command after install, ", noteLink("see how"), ".");
+      note.append("Apple Silicon only. Fastest install is ", noteLink("one Terminal command"), ".");
       break;
     case "windows":
-      cta.replaceChildren(downloadButton("windows", "Download for Windows", latest), all);
-      note.textContent = "64-bit installer. Free and open source.";
+      note.textContent = "64-bit installer for Windows 10 and 11.";
       break;
-    case "linux": {
-      const label = el("p", "cta-label", "Download for Linux");
-      cta.replaceChildren(
-        label,
-        downloadButton("deb", ".deb", latest),
-        downloadButton("rpm", ".rpm", latest),
-        downloadButton("appimage", ".AppImage", latest),
-        all,
-      );
-      note.textContent = "Debian and Ubuntu, Fedora and openSUSE, or any distribution.";
-      break;
-    }
-    case "mobile":
-      cta.replaceChildren(all);
-      note.textContent = "Puplify is a desktop app. Open this page on your Mac, PC or Linux machine.";
+    case "linux":
+      note.append("AppImage runs on any distribution. ", noteLink(".deb and .rpm"), " are under Other platforms.");
       break;
     default:
       note.textContent = "Free and open source.";
@@ -260,8 +265,8 @@ async function loadLatest(): Promise<Latest | null> {
 }
 
 function initCopy(): void {
-  const button = $<HTMLButtonElement>("#copy-xattr");
-  const source = $("#xattr");
+  const button = $<HTMLButtonElement>("#copy-install");
+  const source = $("#install-cmd");
   if (!button || !source) return;
   button.addEventListener("click", async () => {
     try {

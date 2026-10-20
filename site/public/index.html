@@ -258,11 +258,12 @@
 
             <div class="notes">
               <h3>Before you start</h3>
-              <p><strong>macOS.</strong> The build is not notarized and runs on Apple Silicon only (Intel Macs: build from source). After dragging Puplify to Applications, run this once:</p>
+              <p><strong>macOS.</strong> Apple Silicon only (Intel Macs: build from source). The quickest install is one Terminal command: it downloads the latest release and puts Puplify in Applications, ready to open.</p>
               <div class="copy">
-                <code id="xattr">xattr -dr com.apple.quarantine /Applications/Puplify.app</code>
-                <button class="copy-btn" id="copy-xattr" type="button">Copy</button>
+                <code id="install-cmd">curl -fsSL https://puplify.com/install.sh | sh</code>
+                <button class="copy-btn" id="copy-install" type="button">Copy</button>
               </div>
+              <p>Downloaded the <code>.dmg</code> instead? The build isn't notarized yet, so macOS blocks the first launch. Run <code>xattr -dr com.apple.quarantine /Applications/Puplify.app</code> once, or choose <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security.</p>
               <p>The first recording asks for Microphone and Screen &amp; System Audio Recording access. Allow both, then restart Puplify.</p>
               <p><strong>Linux.</strong> Needs PipeWire (with <code>pipewire-pulse</code>) or PulseAudio.</p>
             </div>
