@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileTextIcon, MicIcon, SquareIcon, Volume2Icon } from "lucide-react";
+import { CalendarClockIcon, FileTextIcon, MicIcon, SquareIcon, Volume2Icon } from "lucide-react";
 
 import { LevelMeter } from "@/components/level-meter";
 import { DeliveryList } from "@/components/delivery-list";
@@ -10,19 +10,56 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import type { Config } from "@/lib/api";
-import { fmtTs } from "@/lib/format";
+import type { CalendarSnapshot, Config, Meeting } from "@/lib/api";
+import { fmtTs, timeOfDay } from "@/lib/format";
 import type { SessionState } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 interface RecorderViewProps {
   session: SessionState;
   config: Config | null;
+  calendar: CalendarSnapshot | null;
   onStart: (title: string) => void;
   onStop: () => void;
   onNew: () => void;
   onOpenTranscript: (id: string) => void;
   onOpenSettings: () => void;
+}
+
+const PROVIDER: Record<Meeting["provider"], string> = { google: "Google Calendar", microsoft: "Outlook" };
+
+/** The next (or current) online meeting from the connected calendars. */
+function NextMeeting({ calendar, config }: { calendar: CalendarSnapshot; config: Config }) {
+  const now = Date.now();
+  const next = calendar.meetings.find((m) => new Date(m.end).getTime() > now);
+  const live = next && new Date(next.start).getTime() - 5 * 60_000 <= now;
+  const behaviour =
+    config.calendar.mode === "auto" ? "Recording starts when you join the call." : "Puplify asks when you join the call.";
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CalendarClockIcon className="size-4 text-muted-foreground" aria-hidden />
+          {next ? (live ? "Meeting in progress" : "Next meeting") : "No more online meetings today"}
+        </CardTitle>
+        {next ? (
+          <CardDescription>
+            <span className="font-medium text-foreground">{next.title}</span> · {timeOfDay(new Date(next.start))}–
+            {timeOfDay(new Date(next.end))} · {PROVIDER[next.provider]}. {behaviour}
+          </CardDescription>
+        ) : (
+          <CardDescription>Puplify watches your calendar for meetings with a video link.</CardDescription>
+        )}
+      </CardHeader>
+      {calendar.warnings.length > 0 && (
+        <CardContent className="flex flex-col gap-1 text-sm text-destructive">
+          {calendar.warnings.map((w) => (
+            <p key={w}>{w}</p>
+          ))}
+        </CardContent>
+      )}
+    </Card>
+  );
 }
 
 export function RecorderView(props: RecorderViewProps) {
@@ -33,7 +70,7 @@ export function RecorderView(props: RecorderViewProps) {
   );
 }
 
-function ReadyPanel({ session, config, onStart, onOpenSettings }: RecorderViewProps) {
+function ReadyPanel({ session, config, calendar, onStart, onOpenSettings }: RecorderViewProps) {
   const [title, setTitle] = useState("");
   const starting = session.phase === "starting";
   const capture = config?.capture;
@@ -59,6 +96,8 @@ function ReadyPanel({ session, config, onStart, onOpenSettings }: RecorderViewPr
             className="w-full border-b border-border bg-transparent pb-2 font-heading text-3xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/50 focus-visible:border-ring"
           />
         </label>
+
+        {calendar && config && <NextMeeting calendar={calendar} config={config} />}
 
         <Card size="sm">
           <CardHeader>
@@ -156,7 +195,15 @@ function LivePanel({ session, config, onStop, onNew, onOpenTranscript }: Recorde
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <header className="sticky top-0 z-10 -mx-4 flex flex-col gap-5 bg-background/90 px-4 pt-2 pb-4 backdrop-blur">
         <div className="flex items-center gap-4">
-          <h1 className="min-w-0 flex-1 truncate font-heading text-2xl font-semibold tracking-tight">{session.title}</h1>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <h1 className="truncate font-heading text-2xl font-semibold tracking-tight">{session.title}</h1>
+            {session.meeting && (
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <CalendarClockIcon className="size-3.5" aria-hidden />
+                From {PROVIDER[session.meeting.provider]} · stops when you leave the call
+              </p>
+            )}
+          </div>
           {recording && (
             <span className="flex items-center gap-2 font-mono text-sm tabular-nums">
               <span className="size-2.5 animate-pulse rounded-full bg-tally" aria-hidden />

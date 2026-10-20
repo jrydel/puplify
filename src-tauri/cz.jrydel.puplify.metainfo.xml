@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata: lets GNOME Software / KDE Discover show, open and uninstall Puplify. -->
+<component type="desktop-application">
+  <id>cz.jrydel.puplify</id>
+  <name>Puplify</name>
+  <summary>Meeting transcripts, word for word</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="cz.jrydel">
+    <name>Jiří Rýdel</name>
+  </developer>
+  <description>
+    <p>
+      Puplify records your microphone and the meeting's audio, transcribes both live and saves
+      the full text transcript. No bot joins the call and nothing is summarised away.
+    </p>
+    <ul>
+      <li>Transcribes on your computer with Whisper, or in the cloud with Deepgram</li>
+      <li>Tells you and the other participants apart by audio source</li>
+      <li>Sends finished transcripts to OneDrive, Google Drive, Dropbox, Notion, a folder or a webhook</li>
+      <li>Can start recording by itself when a meeting from your calendar begins</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">Puplify.desktop</launchable>
+  <url type="homepage">https://puplify.com</url>
+  <url type="bugtracker">https://github.com/jrydel/puplify/issues</url>
+  <url type="vcs-browser">https://github.com/jrydel/puplify</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A transcript with the timeline of who spoke when</caption>
+      <image>https://raw.githubusercontent.com/jrydel/puplify/main/docs/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Office</category>
+    <category>AudioVideo</category>
+  </categories>
+  <keywords>
+    <keyword>transcription</keyword>
+    <keyword>meeting</keyword>
+    <keyword>whisper</keyword>
+    <keyword>recorder</keyword>
+  </keywords>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>puplify-app</binary>
+  </provides>
+  <releases>
+    <release version="0.4.0" date="2026-10-20">
+      <description>
+        <p>Records meetings from your Google or Outlook calendar automatically, with Accounts and Calendar settings.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-10-20">
+      <description>
+        <p>Ships with a multilingual Whisper model, so the first recording needs no download.</p>
+      </description>
+    </release>
+    <release version="0.2.0" date="2026-10-20">
+      <description>
+        <p>Windows support, a new interface and Google Drive, Dropbox and Notion destinations.</p>
+      </description>
+    </release>
+  </releases>
+</component>

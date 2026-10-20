@@ -39,8 +39,17 @@
       "icons/icon.png"
     ],
     "linux": {
-      "deb": { "depends": ["libpulse0"] },
-      "rpm": { "depends": ["pulseaudio-libs"] }
+      "deb": {
+        "depends": ["libpulse0"],
+        "files": { "/usr/share/metainfo/cz.jrydel.puplify.metainfo.xml": "cz.jrydel.puplify.metainfo.xml" }
+      },
+      "rpm": {
+        "depends": ["pulseaudio-libs"],
+        "files": { "/usr/share/metainfo/cz.jrydel.puplify.metainfo.xml": "cz.jrydel.puplify.metainfo.xml" }
+      },
+      "appimage": {
+        "files": { "/usr/share/metainfo/cz.jrydel.puplify.metainfo.xml": "cz.jrydel.puplify.metainfo.xml" }
+      }
     },
     "macOS": {
       "minimumSystemVersion": "13.0",

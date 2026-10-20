@@ -6,8 +6,9 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use puplify_core::{
     audio,
+    calendar,
     config::{Config, ExportFormat},
-    connectors::{self, dropbox, google_drive, onedrive, webhook},
+    connectors::{self, dropbox, google, microsoft, webhook},
     session::{self, Recording, SessionEvent},
     store,
     stt::models,
@@ -16,7 +17,7 @@ use puplify_core::{
 use tokio::sync::mpsc;
 
 #[derive(Parser)]
-#[command(name = "puplify", version, about = "Meeting transcription with connectors (OneDrive, Google Drive, Dropbox, Notion, webhooks, folders)")]
+#[command(name = "puplify", version, about = "Meeting transcription with calendar auto-recording and connectors (OneDrive, Google Drive, Dropbox, Notion, webhooks, folders)")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -57,13 +58,13 @@ enum Command {
         #[command(subcommand)]
         command: ModelsCommand,
     },
-    /// Connect or disconnect OneDrive.
-    Onedrive {
+    /// Connect or disconnect the Microsoft account (OneDrive export, Outlook calendar).
+    Microsoft {
         #[command(subcommand)]
-        command: OneDriveCommand,
+        command: SignInCommand,
     },
-    /// Connect or disconnect Google Drive.
-    Gdrive {
+    /// Connect or disconnect the Google account (Google Drive export, Google Calendar).
+    Google {
         #[command(subcommand)]
         command: SignInCommand,
     },
@@ -74,6 +75,14 @@ enum Command {
     },
     /// Send a test event to a configured webhook (by name or URL; all when omitted).
     WebhookTest { name: Option<String> },
+    /// List upcoming online meetings from the enabled calendars.
+    Calendar {
+        /// How many hours ahead to look.
+        #[arg(long, default_value_t = 24)]
+        hours: u32,
+    },
+    /// Show whether another application is using the microphone.
+    MicActivity,
     /// Print the config file path and contents.
     Config,
 }
@@ -82,13 +91,6 @@ enum Command {
 enum ModelsCommand {
     List,
     Download { name: String },
-}
-
-#[derive(Subcommand)]
-enum OneDriveCommand {
-    Login,
-    Status,
-    Logout,
 }
 
 #[derive(Subcommand)]
@@ -196,63 +198,53 @@ async fn main() -> Result<()> {
             eprintln!("\nSaved {}", path.display());
             Ok(())
         }
-        Command::Onedrive { command: OneDriveCommand::Login } => {
-            let code = onedrive::begin_login(&cfg.connectors.onedrive).await?;
+        Command::Microsoft { command: SignInCommand::Login } => {
+            let code = microsoft::begin_login(&cfg.accounts.microsoft).await?;
             println!("{}", code.message);
-            let account = onedrive::finish_login(&cfg.connectors.onedrive, &code).await?;
+            let account = microsoft::finish_login(&cfg.accounts.microsoft, &code).await?;
             println!("Signed in as {account}");
-            if !cfg.connectors.onedrive.enabled {
-                println!("Note: OneDrive export is disabled; set connectors.onedrive.enabled = true in {}", Config::path()?.display());
+            if !cfg.connectors.onedrive.enabled && !cfg.calendar.microsoft {
+                println!(
+                    "Note: nothing uses this account yet; set connectors.onedrive.enabled and/or calendar.microsoft = true in {}",
+                    Config::path()?.display()
+                );
             }
             Ok(())
         }
-        Command::Onedrive { command: OneDriveCommand::Status } => {
-            match onedrive::status()? {
-                Some(account) => println!("Signed in as {account}"),
-                None => println!("Not signed in"),
-            }
-            Ok(())
-        }
-        Command::Onedrive { command: OneDriveCommand::Logout } => onedrive::logout(),
-        Command::Gdrive { command: SignInCommand::Login } => {
-            let code = google_drive::begin_login(&cfg.connectors.google_drive).await?;
-            println!("{}", code.message);
-            let account = google_drive::finish_login(&cfg.connectors.google_drive, &code).await?;
+        Command::Microsoft { command: SignInCommand::Status } => print_status(microsoft::status()?),
+        Command::Microsoft { command: SignInCommand::Logout } => microsoft::logout(),
+        Command::Google { command: SignInCommand::Login } => {
+            let account = google::login(&cfg.accounts.google, |url| {
+                println!("Opening your browser to sign in to Google. If it does not open, visit:\n\n{url}\n");
+                open_browser(url);
+            })
+            .await?;
             println!("Signed in as {account}");
-            if !cfg.connectors.google_drive.enabled {
-                println!("Note: Google Drive export is disabled; set connectors.google_drive.enabled = true in {}", Config::path()?.display());
+            if !cfg.connectors.google_drive.enabled && !cfg.calendar.google {
+                println!(
+                    "Note: nothing uses this account yet; set connectors.google_drive.enabled and/or calendar.google = true in {}",
+                    Config::path()?.display()
+                );
             }
             Ok(())
         }
-        Command::Gdrive { command: SignInCommand::Status } => {
-            match google_drive::status()? {
-                Some(account) => println!("Signed in as {account}"),
-                None => println!("Not signed in"),
-            }
-            Ok(())
-        }
-        Command::Gdrive { command: SignInCommand::Logout } => google_drive::logout(),
+        Command::Google { command: SignInCommand::Status } => print_status(google::status()?),
+        Command::Google { command: SignInCommand::Logout } => google::logout(),
         Command::Dropbox { command: SignInCommand::Login } => {
-            let pending = dropbox::begin_login(&cfg.connectors.dropbox)?;
+            let pending = dropbox::begin_login(&cfg.accounts.dropbox)?;
             println!("Open this URL, approve access, and paste the code Dropbox shows:\n\n{}\n", pending.url);
             print!("Code: ");
             std::io::stdout().flush()?;
             let mut code = String::new();
             std::io::stdin().read_line(&mut code).context("reading the code from stdin")?;
-            let account = dropbox::finish_login(&cfg.connectors.dropbox, &pending.verifier, &code).await?;
+            let account = dropbox::finish_login(&cfg.accounts.dropbox, &pending.verifier, &code).await?;
             println!("Signed in as {account}");
             if !cfg.connectors.dropbox.enabled {
                 println!("Note: Dropbox export is disabled; set connectors.dropbox.enabled = true in {}", Config::path()?.display());
             }
             Ok(())
         }
-        Command::Dropbox { command: SignInCommand::Status } => {
-            match dropbox::status()? {
-                Some(account) => println!("Signed in as {account}"),
-                None => println!("Not signed in"),
-            }
-            Ok(())
-        }
+        Command::Dropbox { command: SignInCommand::Status } => print_status(dropbox::status()?),
         Command::Dropbox { command: SignInCommand::Logout } => dropbox::logout(),
         Command::WebhookTest { name } => {
             let hooks: Vec<_> = cfg
@@ -275,6 +267,31 @@ async fn main() -> Result<()> {
             }
             report(&results)
         }
+        Command::Calendar { hours } => {
+            let (meetings, warnings) = calendar::upcoming(&cfg, chrono::Duration::hours(hours.into())).await;
+            for w in &warnings {
+                eprintln!("warning: {w}");
+            }
+            if meetings.is_empty() && warnings.is_empty() {
+                println!("No online meetings found. Enable a calendar under calendar.google / calendar.microsoft in {}", Config::path()?.display());
+            }
+            for m in &meetings {
+                let local = |t: chrono::DateTime<chrono::Utc>| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string();
+                println!(
+                    "{} - {}  {:<9}  {}  {}",
+                    local(m.start),
+                    &local(m.end)[11..],
+                    format!("{:?}", m.provider).to_lowercase(),
+                    m.title,
+                    m.join_url.as_deref().unwrap_or("")
+                );
+            }
+            Ok(())
+        }
+        Command::MicActivity => {
+            println!("{}", serde_json::to_string_pretty(&audio::activity::mic_activity()?)?);
+            Ok(())
+        }
         Command::Config => {
             let path = Config::path()?;
             println!("# {}", path.display());
@@ -292,6 +309,33 @@ fn report(results: &[connectors::DeliveryResult]) -> Result<()> {
         bail!("some deliveries failed");
     }
     Ok(())
+}
+
+fn print_status(account: Option<String>) -> Result<()> {
+    match account {
+        Some(account) => println!("Signed in as {account}"),
+        None => println!("Not signed in"),
+    }
+    Ok(())
+}
+
+/// Best effort: the sign-in URL is also printed, so failures are ignored.
+fn open_browser(url: &str) {
+    let mut command = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+    } else if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    let _ = command
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 async fn record(cfg: Config, title: String, duration: Option<u64>) -> Result<()> {

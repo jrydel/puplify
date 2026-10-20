@@ -61,14 +61,42 @@ export interface Config {
     whisper: { model: string; language: string; threads: number };
     deepgram: { api_key: string; model: string; language: string };
   };
+  accounts: {
+    microsoft: { client_id: string; tenant: string };
+    google: { client_id: string; client_secret: string };
+    dropbox: { app_key: string };
+  };
+  calendar: { mode: AutoRecord; google: boolean; microsoft: boolean };
   connectors: {
     folder: { enabled: boolean; path: string; formats: ExportFormat[] };
-    onedrive: { enabled: boolean; client_id: string; tenant: string; folder: string; formats: ExportFormat[] };
-    google_drive: { enabled: boolean; client_id: string; client_secret: string; folder: string; formats: ExportFormat[] };
-    dropbox: { enabled: boolean; app_key: string; folder: string; formats: ExportFormat[] };
+    onedrive: { enabled: boolean; folder: string; formats: ExportFormat[] };
+    google_drive: { enabled: boolean; folder: string; formats: ExportFormat[] };
+    dropbox: { enabled: boolean; folder: string; formats: ExportFormat[] };
     notion: { enabled: boolean; token: string; parent_page_id: string };
     webhooks: WebhookConfig[];
   };
+}
+
+export type AutoRecord = "auto" | "ask" | "off";
+
+export interface Meeting {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  join_url: string | null;
+  provider: "google" | "microsoft";
+}
+
+export interface CalendarSnapshot {
+  meetings: Meeting[];
+  warnings: string[];
+}
+
+export interface RecordingInfo {
+  transcript_id: string;
+  title: string;
+  meeting: Meeting | null;
 }
 
 export interface DeviceInfo {
@@ -101,7 +129,7 @@ export type SessionEvent =
   | { type: "done"; transcript_id: string };
 
 export interface LoginResult {
-  provider: "onedrive" | "google_drive";
+  provider: "microsoft";
   ok: boolean;
   account: string | null;
   error: string | null;
@@ -119,8 +147,10 @@ export const api = {
   getConfig: () => invoke<Config>("get_config"),
   saveConfig: (config: Config) => invoke<void>("save_config", { config }),
   listDevices: () => invoke<DeviceInfo[]>("list_devices"),
-  recordingStatus: () => invoke<{ transcript_id: string; title: string } | null>("recording_status"),
-  startRecording: (title: string) => invoke<{ transcript_id: string; title: string }>("start_recording", { title }),
+  recordingStatus: () => invoke<RecordingInfo | null>("recording_status"),
+  startRecording: (title: string) => invoke<RecordingInfo>("start_recording", { title }),
+  recordOfferedMeeting: () => invoke<RecordingInfo>("record_offered_meeting"),
+  dismissOfferedMeeting: () => invoke<void>("dismiss_offered_meeting"),
   stopRecording: () => invoke<void>("stop_recording"),
   listTranscripts: () => invoke<TranscriptSummary[]>("list_transcripts"),
   getTranscript: (id: string) => invoke<{ transcript: Transcript; text: string }>("get_transcript", { id }),
@@ -129,16 +159,17 @@ export const api = {
   deliverTranscript: (id: string) => invoke<DeliveryResult[]>("deliver_transcript", { id }),
   listModels: () => invoke<ModelStatus[]>("list_models"),
   downloadModel: (name: string) => invoke<void>("download_model", { name }),
-  onedriveStatus: () => invoke<string | null>("onedrive_status"),
-  onedriveLogin: () => invoke<DeviceLogin>("onedrive_login"),
-  onedriveLogout: () => invoke<void>("onedrive_logout"),
-  gdriveStatus: () => invoke<string | null>("gdrive_status"),
-  gdriveLogin: () => invoke<DeviceLogin>("gdrive_login"),
-  gdriveLogout: () => invoke<void>("gdrive_logout"),
+  microsoftStatus: () => invoke<string | null>("microsoft_status"),
+  microsoftLogin: () => invoke<DeviceLogin>("microsoft_login"),
+  microsoftLogout: () => invoke<void>("microsoft_logout"),
+  googleStatus: () => invoke<string | null>("google_status"),
+  googleLogin: () => invoke<string>("google_login"),
+  googleLogout: () => invoke<void>("google_logout"),
   dropboxStatus: () => invoke<string | null>("dropbox_status"),
   dropboxBeginLogin: () => invoke<{ url: string; verifier: string }>("dropbox_begin_login"),
   dropboxFinishLogin: (verifier: string, code: string) => invoke<string>("dropbox_finish_login", { verifier, code }),
   dropboxLogout: () => invoke<void>("dropbox_logout"),
+  upcomingMeetings: () => invoke<CalendarSnapshot>("upcoming_meetings"),
   testWebhook: (index: number) => invoke<string>("test_webhook", { index }),
 };
 
@@ -152,6 +183,25 @@ export function onLogin(handler: (result: LoginResult) => void): Promise<Unliste
 
 export function onModelProgress(handler: (p: ModelProgress) => void): Promise<UnlistenFn> {
   return listen<ModelProgress>("model-progress", (e) => handler(e.payload));
+}
+
+/** A recording started outside the UI (calendar autopilot) or by it. */
+export function onRecordingStarted(handler: (info: RecordingInfo) => void): Promise<UnlistenFn> {
+  return listen<RecordingInfo>("recording-started", (e) => handler(e.payload));
+}
+
+/** Capture stopped (by the user or the calendar autopilot); transcription is finishing. */
+export function onRecordingStopped(handler: (transcriptId: string) => void): Promise<UnlistenFn> {
+  return listen<string>("recording-stopped", (e) => handler(e.payload));
+}
+
+/** Ask mode: a calendar meeting started and the user joined it. */
+export function onMeetingPrompt(handler: (meeting: Meeting) => void): Promise<UnlistenFn> {
+  return listen<Meeting>("meeting-prompt", (e) => handler(e.payload));
+}
+
+export function onCalendar(handler: (snapshot: CalendarSnapshot) => void): Promise<UnlistenFn> {
+  return listen<CalendarSnapshot>("calendar", (e) => handler(e.payload));
 }
 
 /** Commands reject with the Rust error string. */

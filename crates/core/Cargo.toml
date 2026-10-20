@@ -32,9 +32,13 @@ libpulse-simple-binding = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 cpal = "0.18"
 screencapturekit = "11"
+# Same minor as the objc2-core-audio that cpal 0.18 already resolves, so the lockfile gains no second copy.
+objc2-core-audio = { version = "0.3", default-features = false, features = ["std", "AudioHardware"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = "0.18"
+# Same minor as the windows-registry reqwest already pulls in.
+windows-registry = "0.6"
 
 [features]
 # GPU acceleration for whisper.cpp; enable the one matching the build host.

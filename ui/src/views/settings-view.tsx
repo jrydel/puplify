@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { DownloadIcon, ExternalLinkIcon, PlusIcon, SendIcon, Trash2Icon } from "lucide-react";
+import { DownloadIcon, ExternalLinkIcon, PlusIcon, RefreshCwIcon, SendIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
   errorText,
   onLogin,
   onModelProgress,
+  type CalendarSnapshot,
   type Config,
   type DeviceInfo,
   type DeviceLogin,
@@ -43,6 +44,7 @@ import {
   type ModelStatus,
   type WebhookEvent,
 } from "@/lib/api";
+import { timeOfDay } from "@/lib/format";
 
 /** Radix Select can't use "" as a value; this stands for "use the default device". */
 const DEFAULT_DEVICE = "__default";
@@ -53,23 +55,23 @@ const WEBHOOK_EVENTS: { id: WebhookEvent; label: string; hint: string }[] = [
   { id: "recording.completed", label: "Recording finished", hint: "Full transcript text and segments" },
 ];
 
-type Accounts = Record<"onedrive" | "google_drive" | "dropbox", string | null>;
+type Accounts = Record<"microsoft" | "google" | "dropbox", string | null>;
 
 export function SettingsView({ onSaved }: { onSaved: (config: Config) => void }) {
   const [saved, setSaved] = useState<Config | null>(null);
   const [draft, setDraft] = useState<Config | null>(null);
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
-  const [accounts, setAccounts] = useState<Accounts>({ onedrive: null, google_drive: null, dropbox: null });
+  const [accounts, setAccounts] = useState<Accounts>({ microsoft: null, google: null, dropbox: null });
   const [saving, setSaving] = useState(false);
 
   const refreshAccounts = useCallback(async () => {
-    const [onedrive, google_drive, dropbox] = await Promise.all([
-      api.onedriveStatus().catch(() => null),
-      api.gdriveStatus().catch(() => null),
+    const [microsoft, google, dropbox] = await Promise.all([
+      api.microsoftStatus().catch(() => null),
+      api.googleStatus().catch(() => null),
       api.dropboxStatus().catch(() => null),
     ]);
-    setAccounts({ onedrive, google_drive, dropbox });
+    setAccounts({ microsoft, google, dropbox });
   }, []);
 
   useEffect(() => {
@@ -121,7 +123,9 @@ export function SettingsView({ onSaved }: { onSaved: (config: Config) => void })
         <TabsList>
           <TabsTrigger value="transcription">Transcription</TabsTrigger>
           <TabsTrigger value="audio">Audio</TabsTrigger>
+          <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="destinations">Destinations</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
         </TabsList>
 
@@ -131,8 +135,14 @@ export function SettingsView({ onSaved }: { onSaved: (config: Config) => void })
         <TabsContent value="audio" className="pt-4">
           <AudioTab draft={draft} edit={edit} devices={devices} />
         </TabsContent>
+        <TabsContent value="accounts" className="pt-4">
+          <AccountsTab draft={draft} edit={edit} accounts={accounts} save={save} refreshAccounts={refreshAccounts} />
+        </TabsContent>
         <TabsContent value="destinations" className="pt-4">
-          <DestinationsTab draft={draft} edit={edit} accounts={accounts} save={save} refreshAccounts={refreshAccounts} />
+          <DestinationsTab draft={draft} edit={edit} accounts={accounts} />
+        </TabsContent>
+        <TabsContent value="calendar" className="pt-4">
+          <CalendarTab draft={draft} edit={edit} accounts={accounts} save={save} />
         </TabsContent>
         <TabsContent value="webhooks" className="pt-4">
           <WebhooksTab draft={draft} edit={edit} save={save} />
@@ -464,41 +474,23 @@ function DeviceSelect({
   );
 }
 
-/* ---------------- Destinations ---------------- */
+/* ---------------- Accounts ---------------- */
 
-function FormatPicker({ value, onChange }: { value: ExportFormat[]; onChange: (v: ExportFormat[]) => void }) {
-  return (
-    <Field>
-      <FieldLabel>File formats</FieldLabel>
-      <ToggleGroup
-        type="multiple"
-        variant="outline"
-        size="sm"
-        value={value}
-        onValueChange={(v) => onChange(v as ExportFormat[])}
-        className="justify-start"
-      >
-        <ToggleGroupItem value="txt">Text (.txt)</ToggleGroupItem>
-        <ToggleGroupItem value="md">Markdown (.md)</ToggleGroupItem>
-        <ToggleGroupItem value="json">JSON (.json)</ToggleGroupItem>
-      </ToggleGroup>
-    </Field>
-  );
-}
-
-function DestinationCard({
+function AccountCard({
   title,
   description,
-  enabled,
-  onEnabled,
   account,
+  busy,
+  onConnect,
+  onDisconnect,
   children,
 }: {
   title: string;
   description: string;
-  enabled: boolean;
-  onEnabled: (v: boolean) => void;
-  account?: { name: string | null; onConnect: () => void; onDisconnect: () => void; busy: boolean };
+  account: string | null;
+  busy: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
   children: ReactNode;
 }) {
   return (
@@ -506,39 +498,34 @@ function DestinationCard({
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
-        <CardAction>
-          <Switch checked={enabled} onCheckedChange={onEnabled} aria-label={`Send transcripts to ${title}`} />
-        </CardAction>
       </CardHeader>
-      {enabled && <CardContent>{children}</CardContent>}
-      {enabled && account && (
-        <CardFooter className="justify-between border-t">
-          <span className="text-sm text-muted-foreground">
-            {account.name ? (
-              <>
-                Connected as <span className="font-medium text-foreground">{account.name}</span>
-              </>
-            ) : (
-              "Not connected"
-            )}
-          </span>
-          {account.name ? (
-            <Button variant="ghost" size="sm" onClick={account.onDisconnect}>
-              Disconnect
-            </Button>
+      <CardContent>{children}</CardContent>
+      <CardFooter className="justify-between border-t">
+        <span className="text-sm text-muted-foreground">
+          {account ? (
+            <>
+              Connected as <span className="font-medium text-foreground">{account}</span>
+            </>
           ) : (
-            <Button size="sm" onClick={account.onConnect} disabled={account.busy}>
-              {account.busy && <Spinner data-icon="inline-start" />}
-              Connect {title}
-            </Button>
+            "Not connected"
           )}
-        </CardFooter>
-      )}
+        </span>
+        {account ? (
+          <Button variant="ghost" size="sm" onClick={onDisconnect}>
+            Disconnect
+          </Button>
+        ) : (
+          <Button size="sm" onClick={onConnect} disabled={busy}>
+            {busy && <Spinner data-icon="inline-start" />}
+            Connect {title}
+          </Button>
+        )}
+      </CardFooter>
     </Card>
   );
 }
 
-function DestinationsTab({
+function AccountsTab({
   draft,
   edit,
   accounts,
@@ -551,9 +538,9 @@ function DestinationsTab({
   save: () => Promise<boolean>;
   refreshAccounts: () => Promise<void>;
 }) {
-  const c = draft.connectors;
+  const a = draft.accounts;
   const [busy, setBusy] = useState<keyof Accounts | null>(null);
-  const [device, setDevice] = useState<{ provider: string; login: DeviceLogin } | null>(null);
+  const [device, setDevice] = useState<DeviceLogin | null>(null);
   const [dropbox, setDropbox] = useState<{ url: string; verifier: string; code: string } | null>(null);
 
   useEffect(() => {
@@ -569,15 +556,30 @@ function DestinationsTab({
     };
   }, [refreshAccounts]);
 
-  async function connectDevice(provider: "onedrive" | "google_drive", name: string) {
-    setBusy(provider);
+  async function connectMicrosoft() {
+    setBusy("microsoft");
     try {
       if (!(await save())) return setBusy(null);
-      const login = provider === "onedrive" ? await api.onedriveLogin() : await api.gdriveLogin();
-      setDevice({ provider: name, login });
+      const login = await api.microsoftLogin();
+      setDevice(login);
       openUrl(login.verification_uri).catch(() => {});
     } catch (e) {
       toast.error(errorText(e));
+      setBusy(null);
+    }
+  }
+
+  async function connectGoogle() {
+    setBusy("google");
+    try {
+      if (!(await save())) return;
+      // Opens the browser and resolves once Google redirects back to Puplify.
+      const account = await api.googleLogin();
+      toast.success(`Connected as ${account}`);
+      refreshAccounts();
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
       setBusy(null);
     }
   }
@@ -623,52 +625,246 @@ function DestinationsTab({
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
+        Sign in once per service. Each uses your own app registration; the README walks through creating one.
+      </p>
+
+      <AccountCard
+        title="Microsoft"
+        description="Used for OneDrive and your Outlook calendar. Personal or work/school account."
+        account={accounts.microsoft}
+        busy={busy === "microsoft"}
+        onConnect={connectMicrosoft}
+        onDisconnect={() => disconnect(api.microsoftLogout)}
+      >
+        <FieldGroup className="grid grid-cols-[1fr_12rem] gap-4">
+          <Field>
+            <FieldLabel htmlFor="ms-client">Application (client) ID</FieldLabel>
+            <Input
+              id="ms-client"
+              className="font-mono"
+              value={a.microsoft.client_id}
+              onChange={(e) => edit((d) => (d.accounts.microsoft.client_id = e.target.value))}
+              placeholder="00000000-0000-0000-0000-000000000000"
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="ms-tenant">Tenant</FieldLabel>
+            <Input
+              id="ms-tenant"
+              value={a.microsoft.tenant}
+              onChange={(e) => edit((d) => (d.accounts.microsoft.tenant = e.target.value))}
+              placeholder="common"
+            />
+          </Field>
+        </FieldGroup>
+      </AccountCard>
+
+      <AccountCard
+        title="Google"
+        description="Used for Google Drive and Google Calendar. Sign-in opens in your browser."
+        account={accounts.google}
+        busy={busy === "google"}
+        onConnect={connectGoogle}
+        onDisconnect={() => disconnect(api.googleLogout)}
+      >
+        <FieldGroup className="grid grid-cols-2 gap-4">
+          <Field>
+            <FieldLabel htmlFor="g-client">Client ID</FieldLabel>
+            <Input
+              id="g-client"
+              className="font-mono"
+              value={a.google.client_id}
+              onChange={(e) => edit((d) => (d.accounts.google.client_id = e.target.value))}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="g-secret">Client secret</FieldLabel>
+            <Input
+              id="g-secret"
+              type="password"
+              value={a.google.client_secret}
+              onChange={(e) => edit((d) => (d.accounts.google.client_secret = e.target.value))}
+            />
+          </Field>
+        </FieldGroup>
+      </AccountCard>
+
+      <AccountCard
+        title="Dropbox"
+        description="Used for saving transcripts to Dropbox."
+        account={accounts.dropbox}
+        busy={busy === "dropbox"}
+        onConnect={connectDropbox}
+        onDisconnect={() => disconnect(api.dropboxLogout)}
+      >
+        <Field>
+          <FieldLabel htmlFor="db-key">App key</FieldLabel>
+          <Input
+            id="db-key"
+            className="max-w-sm font-mono"
+            value={a.dropbox.app_key}
+            onChange={(e) => edit((d) => (d.accounts.dropbox.app_key = e.target.value))}
+          />
+        </Field>
+      </AccountCard>
+
+      <Dialog open={!!device} onOpenChange={(open) => !open && (setDevice(null), setBusy(null))}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Microsoft</DialogTitle>
+            <DialogDescription>
+              Sign in on the page that just opened and enter this code. This window updates when you're done.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="rounded-lg bg-muted py-5 text-center font-mono text-3xl font-semibold tracking-[0.2em] select-all">
+            {device?.user_code}
+          </p>
+          <DialogFooter className="items-center sm:justify-between">
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner /> Waiting for approval
+            </span>
+            <Button variant="outline" onClick={() => device && openUrl(device.verification_uri)}>
+              <ExternalLinkIcon data-icon="inline-start" />
+              Open sign-in page
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={busy === "google"}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Finish signing in to Google</DialogTitle>
+            <DialogDescription>
+              Choose your account in the browser window that just opened and allow access. Puplify continues on its
+              own afterwards.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="items-center sm:justify-start">
+            <span className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner /> Waiting for Google
+            </span>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!dropbox} onOpenChange={(open) => !open && setDropbox(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect Dropbox</DialogTitle>
+            <DialogDescription>
+              Allow access on the Dropbox page that just opened, then paste the code it shows you.
+            </DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="db-code">Code from Dropbox</FieldLabel>
+            <Input
+              id="db-code"
+              autoFocus
+              className="font-mono"
+              value={dropbox?.code ?? ""}
+              onChange={(e) => setDropbox((d) => d && { ...d, code: e.target.value })}
+            />
+          </Field>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => dropbox && openUrl(dropbox.url)}>
+              <ExternalLinkIcon data-icon="inline-start" />
+              Open Dropbox
+            </Button>
+            <Button onClick={finishDropbox} disabled={!dropbox?.code.trim() || busy === "dropbox"}>
+              {busy === "dropbox" && <Spinner data-icon="inline-start" />}
+              Connect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ---------------- Destinations ---------------- */
+
+function FormatPicker({ value, onChange }: { value: ExportFormat[]; onChange: (v: ExportFormat[]) => void }) {
+  return (
+    <Field>
+      <FieldLabel>File formats</FieldLabel>
+      <ToggleGroup
+        type="multiple"
+        variant="outline"
+        size="sm"
+        value={value}
+        onValueChange={(v) => onChange(v as ExportFormat[])}
+        className="justify-start"
+      >
+        <ToggleGroupItem value="txt">Text (.txt)</ToggleGroupItem>
+        <ToggleGroupItem value="md">Markdown (.md)</ToggleGroupItem>
+        <ToggleGroupItem value="json">JSON (.json)</ToggleGroupItem>
+      </ToggleGroup>
+    </Field>
+  );
+}
+
+function DestinationCard({
+  title,
+  description,
+  enabled,
+  onEnabled,
+  needsAccount,
+  children,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  onEnabled: (v: boolean) => void;
+  /** Name of the account to connect first, when it isn't connected yet. */
+  needsAccount?: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+        <CardAction>
+          <Switch checked={enabled} onCheckedChange={onEnabled} aria-label={`Send transcripts to ${title}`} />
+        </CardAction>
+      </CardHeader>
+      {enabled && (
+        <CardContent className="flex flex-col gap-4">
+          {needsAccount && (
+            <p className="text-sm text-destructive">Connect your {needsAccount} account in the Accounts tab first.</p>
+          )}
+          {children}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function DestinationsTab({ draft, edit, accounts }: { draft: Config; edit: Edit; accounts: Accounts }) {
+  const c = draft.connectors;
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-muted-foreground">
         When a recording finishes, the transcript is saved on this computer and sent to every destination you turn on.
       </p>
 
       <DestinationCard
         title="OneDrive"
-        description="Personal or work/school account."
+        description="Saved to a folder in your OneDrive."
         enabled={c.onedrive.enabled}
         onEnabled={(v) => edit((d) => (d.connectors.onedrive.enabled = v))}
-        account={{
-          name: accounts.onedrive,
-          busy: busy === "onedrive",
-          onConnect: () => connectDevice("onedrive", "OneDrive"),
-          onDisconnect: () => disconnect(api.onedriveLogout),
-        }}
+        needsAccount={accounts.microsoft ? null : "Microsoft"}
       >
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="od-client">Application (client) ID</FieldLabel>
+            <FieldLabel htmlFor="od-folder">Folder</FieldLabel>
             <Input
-              id="od-client"
-              className="font-mono"
-              value={c.onedrive.client_id}
-              onChange={(e) => edit((d) => (d.connectors.onedrive.client_id = e.target.value))}
-              placeholder="00000000-0000-0000-0000-000000000000"
+              id="od-folder"
+              value={c.onedrive.folder}
+              onChange={(e) => edit((d) => (d.connectors.onedrive.folder = e.target.value))}
             />
-            <FieldDescription>From your Microsoft Entra app registration. The README walks through it.</FieldDescription>
           </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel htmlFor="od-folder">Folder</FieldLabel>
-              <Input
-                id="od-folder"
-                value={c.onedrive.folder}
-                onChange={(e) => edit((d) => (d.connectors.onedrive.folder = e.target.value))}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="od-tenant">Tenant</FieldLabel>
-              <Input
-                id="od-tenant"
-                value={c.onedrive.tenant}
-                onChange={(e) => edit((d) => (d.connectors.onedrive.tenant = e.target.value))}
-                placeholder="common"
-              />
-            </Field>
-          </div>
           <FormatPicker
             value={c.onedrive.formats}
             onChange={(v) => edit((d) => (d.connectors.onedrive.formats = v))}
@@ -681,34 +877,9 @@ function DestinationsTab({
         description="Saved to a folder in My Drive."
         enabled={c.google_drive.enabled}
         onEnabled={(v) => edit((d) => (d.connectors.google_drive.enabled = v))}
-        account={{
-          name: accounts.google_drive,
-          busy: busy === "google_drive",
-          onConnect: () => connectDevice("google_drive", "Google Drive"),
-          onDisconnect: () => disconnect(api.gdriveLogout),
-        }}
+        needsAccount={accounts.google ? null : "Google"}
       >
         <FieldGroup>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel htmlFor="gd-client">Client ID</FieldLabel>
-              <Input
-                id="gd-client"
-                className="font-mono"
-                value={c.google_drive.client_id}
-                onChange={(e) => edit((d) => (d.connectors.google_drive.client_id = e.target.value))}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="gd-secret">Client secret</FieldLabel>
-              <Input
-                id="gd-secret"
-                type="password"
-                value={c.google_drive.client_secret}
-                onChange={(e) => edit((d) => (d.connectors.google_drive.client_secret = e.target.value))}
-              />
-            </Field>
-          </div>
           <Field>
             <FieldLabel htmlFor="gd-folder">Folder</FieldLabel>
             <Input
@@ -716,7 +887,6 @@ function DestinationsTab({
               value={c.google_drive.folder}
               onChange={(e) => edit((d) => (d.connectors.google_drive.folder = e.target.value))}
             />
-            <FieldDescription>OAuth client of type “TVs and Limited Input devices”. See the README.</FieldDescription>
           </Field>
           <FormatPicker
             value={c.google_drive.formats}
@@ -730,33 +900,17 @@ function DestinationsTab({
         description="Saved to a folder in your Dropbox."
         enabled={c.dropbox.enabled}
         onEnabled={(v) => edit((d) => (d.connectors.dropbox.enabled = v))}
-        account={{
-          name: accounts.dropbox,
-          busy: busy === "dropbox",
-          onConnect: connectDropbox,
-          onDisconnect: () => disconnect(api.dropboxLogout),
-        }}
+        needsAccount={accounts.dropbox ? null : "Dropbox"}
       >
         <FieldGroup>
-          <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel htmlFor="db-key">App key</FieldLabel>
-              <Input
-                id="db-key"
-                className="font-mono"
-                value={c.dropbox.app_key}
-                onChange={(e) => edit((d) => (d.connectors.dropbox.app_key = e.target.value))}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="db-folder">Folder</FieldLabel>
-              <Input
-                id="db-folder"
-                value={c.dropbox.folder}
-                onChange={(e) => edit((d) => (d.connectors.dropbox.folder = e.target.value))}
-              />
-            </Field>
-          </div>
+          <Field>
+            <FieldLabel htmlFor="db-folder">Folder</FieldLabel>
+            <Input
+              id="db-folder"
+              value={c.dropbox.folder}
+              onChange={(e) => edit((d) => (d.connectors.dropbox.folder = e.target.value))}
+            />
+          </Field>
           <FormatPicker value={c.dropbox.formats} onChange={(v) => edit((d) => (d.connectors.dropbox.formats = v))} />
         </FieldGroup>
       </DestinationCard>
@@ -810,60 +964,129 @@ function DestinationsTab({
           <FormatPicker value={c.folder.formats} onChange={(v) => edit((d) => (d.connectors.folder.formats = v))} />
         </FieldGroup>
       </DestinationCard>
+    </div>
+  );
+}
 
-      <Dialog open={!!device} onOpenChange={(open) => !open && (setDevice(null), setBusy(null))}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Connect {device?.provider}</DialogTitle>
-            <DialogDescription>
-              Sign in on the page that just opened and enter this code. This window updates when you're done.
-            </DialogDescription>
-          </DialogHeader>
-          <p className="rounded-lg bg-muted py-5 text-center font-mono text-3xl font-semibold tracking-[0.2em] select-all">
-            {device?.login.user_code}
-          </p>
-          <DialogFooter className="items-center sm:justify-between">
-            <span className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner /> Waiting for approval
-            </span>
-            <Button variant="outline" onClick={() => device && openUrl(device.login.verification_uri)}>
-              <ExternalLinkIcon data-icon="inline-start" />
-              Open sign-in page
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+/* ---------------- Calendar ---------------- */
 
-      <Dialog open={!!dropbox} onOpenChange={(open) => !open && setDropbox(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Connect Dropbox</DialogTitle>
-            <DialogDescription>
-              Allow access on the Dropbox page that just opened, then paste the code it shows you.
-            </DialogDescription>
-          </DialogHeader>
-          <Field>
-            <FieldLabel htmlFor="db-code">Code from Dropbox</FieldLabel>
-            <Input
-              id="db-code"
-              autoFocus
-              className="font-mono"
-              value={dropbox?.code ?? ""}
-              onChange={(e) => setDropbox((d) => d && { ...d, code: e.target.value })}
-            />
-          </Field>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => dropbox && openUrl(dropbox.url)}>
-              <ExternalLinkIcon data-icon="inline-start" />
-              Open Dropbox
+function CalendarTab({
+  draft,
+  edit,
+  accounts,
+  save,
+}: {
+  draft: Config;
+  edit: Edit;
+  accounts: Accounts;
+  save: () => Promise<boolean>;
+}) {
+  const cal = draft.calendar;
+  const [snapshot, setSnapshot] = useState<CalendarSnapshot | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function check() {
+    setChecking(true);
+    try {
+      if (!(await save())) return;
+      setSnapshot(await api.upcomingMeetings());
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  const sources: { key: "microsoft" | "google"; title: string; account: string | null; needs: string }[] = [
+    { key: "microsoft", title: "Outlook calendar", account: accounts.microsoft, needs: "Microsoft" },
+    { key: "google", title: "Google Calendar", account: accounts.google, needs: "Google" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Record meetings from your calendar</CardTitle>
+          <CardDescription>
+            When a calendar event with a video link (Meet, Teams, Zoom, Webex) is under way and another app starts
+            using your microphone, you've joined the call.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={cal.mode}
+            onValueChange={(v) => v && edit((c) => (c.calendar.mode = v as Config["calendar"]["mode"]))}
+            className="justify-start"
+          >
+            <ToggleGroupItem value="auto">Record automatically</ToggleGroupItem>
+            <ToggleGroupItem value="ask">Ask me</ToggleGroupItem>
+            <ToggleGroupItem value="off">Off</ToggleGroupItem>
+          </ToggleGroup>
+          <FieldDescription>
+            {cal.mode === "auto"
+              ? "Recording starts by itself, with a notification, and stops when you leave the call."
+              : cal.mode === "ask"
+                ? "A notification and a prompt in Puplify ask before each recording."
+                : "Calendars are not read."}{" "}
+            Recording other people may require their consent.
+          </FieldDescription>
+        </CardContent>
+      </Card>
+
+      {sources.map((s) => (
+        <Card key={s.key} size="sm">
+          <CardHeader>
+            <CardTitle>{s.title}</CardTitle>
+            <CardDescription>
+              {s.account ? `Reads ${s.account}'s calendar.` : `Connect your ${s.needs} account in the Accounts tab first.`}
+            </CardDescription>
+            <CardAction>
+              <Switch
+                checked={cal[s.key]}
+                disabled={!s.account && !cal[s.key]}
+                onCheckedChange={(v) => edit((c) => (c.calendar[s.key] = v))}
+                aria-label={`Use ${s.title}`}
+              />
+            </CardAction>
+          </CardHeader>
+        </Card>
+      ))}
+
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>Upcoming online meetings</CardTitle>
+          <CardDescription>Next 12 hours from the calendars turned on above.</CardDescription>
+          <CardAction>
+            <Button variant="outline" size="sm" onClick={check} disabled={checking || cal.mode === "off"}>
+              {checking ? <Spinner data-icon="inline-start" /> : <RefreshCwIcon data-icon="inline-start" />}
+              Check now
             </Button>
-            <Button onClick={finishDropbox} disabled={!dropbox?.code.trim() || busy === "dropbox"}>
-              {busy === "dropbox" && <Spinner data-icon="inline-start" />}
-              Connect
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </CardAction>
+        </CardHeader>
+        {snapshot && (
+          <CardContent className="flex flex-col gap-2 text-sm">
+            {snapshot.meetings.length === 0 && <p className="text-muted-foreground">No online meetings found.</p>}
+            {snapshot.meetings.map((m) => (
+              <div key={m.id} className="flex items-baseline gap-3">
+                <span className="shrink-0 font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                  {timeOfDay(new Date(m.start))}–{timeOfDay(new Date(m.end))}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-medium">{m.title}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {m.provider === "google" ? "Google" : "Outlook"}
+                </span>
+              </div>
+            ))}
+            {snapshot.warnings.map((w) => (
+              <p key={w} className="text-destructive">
+                {w}
+              </p>
+            ))}
+          </CardContent>
+        )}
+      </Card>
     </div>
   );
 }

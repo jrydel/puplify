@@ -3,14 +3,12 @@
 //! secret is needed. Tokens are stored in the config directory with mode 0600.
 
 use anyhow::{bail, Context, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
-use super::oauth::{self, http, http_error, oauth_error};
-use crate::config::DropboxConfig;
+use super::oauth::{self, http, http_error, oauth_error, pkce_challenge, pkce_verifier, TokenResponse};
+use crate::config::{DropboxAccount, DropboxConfig};
 use crate::transcript::Transcript;
 
 const AUTHORIZE_URL: &str = "https://www.dropbox.com/oauth2/authorize";
@@ -38,14 +36,7 @@ struct StoredToken {
     expires_at: DateTime<Utc>,
 }
 
-#[derive(Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    refresh_token: Option<String>,
-    expires_in: i64,
-}
-
-fn app_key(cfg: &DropboxConfig) -> Result<&str> {
+fn app_key(cfg: &DropboxAccount) -> Result<&str> {
     match cfg.app_key.trim() {
         "" => bail!("Dropbox app key is not set (see README: Dropbox setup)"),
         key => Ok(key),
@@ -69,26 +60,20 @@ pub fn logout() -> Result<()> {
     oauth::remove_token(TOKEN_FILE)
 }
 
-/// S256 code challenge: base64url (no padding) of the SHA-256 of the verifier.
-fn challenge(verifier: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
-}
-
 /// Step 1: build the authorize URL and a fresh PKCE verifier.
-pub fn begin_login(cfg: &DropboxConfig) -> Result<PendingLogin> {
+pub fn begin_login(cfg: &DropboxAccount) -> Result<PendingLogin> {
     let app_key = app_key(cfg)?;
-    // 64 hex characters from two random UUIDs: 244 bits of entropy, within RFC 7636's 43..=128 unreserved characters.
-    let verifier = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    let verifier = pkce_verifier();
     let url = format!(
         "{AUTHORIZE_URL}?client_id={}&response_type=code&code_challenge={}&code_challenge_method=S256&token_access_type=offline",
         urlencoding::encode(app_key),
-        challenge(&verifier),
+        pkce_challenge(&verifier),
     );
     Ok(PendingLogin { url, verifier })
 }
 
 /// Step 2: exchange the pasted code for tokens. Returns the account email.
-pub async fn finish_login(cfg: &DropboxConfig, verifier: &str, code: &str) -> Result<String> {
+pub async fn finish_login(cfg: &DropboxAccount, verifier: &str, code: &str) -> Result<String> {
     let client = http()?;
     let app_key = app_key(cfg)?;
     let code = code.trim();
@@ -133,7 +118,7 @@ async fn fetch_account(client: &reqwest::Client, access_token: &str) -> Result<S
 }
 
 /// Valid access token, refreshing (and persisting it) when needed.
-async fn access_token(cfg: &DropboxConfig, client: &reqwest::Client) -> Result<String> {
+async fn access_token(cfg: &DropboxAccount, client: &reqwest::Client) -> Result<String> {
     let mut token = load_token()?.context("not signed in to Dropbox")?;
     if token.app_key != app_key(cfg)? {
         bail!("Dropbox app key changed since sign-in; sign in again");
@@ -212,12 +197,12 @@ async fn upload(client: &reqwest::Client, token: &str, path: &str, bytes: Vec<u8
 }
 
 /// Uploads the transcript in each configured format; returns the Dropbox paths.
-pub async fn export(cfg: &DropboxConfig, transcript: &Transcript) -> Result<String> {
+pub async fn export(cfg: &DropboxConfig, account: &DropboxAccount, transcript: &Transcript) -> Result<String> {
     if cfg.formats.is_empty() {
         bail!("no Dropbox formats selected");
     }
     let client = http()?;
-    let token = access_token(cfg, &client).await?;
+    let token = access_token(account, &client).await?;
     let stem = transcript.file_stem();
     let mut paths = Vec::new();
     for &format in &cfg.formats {
@@ -232,26 +217,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pkce_challenge_matches_rfc7636_appendix_b() {
-        assert_eq!(
-            challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
-            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-        );
-    }
-
-    #[test]
     fn login_url_carries_challenge_for_generated_verifier() {
-        let cfg = DropboxConfig { app_key: "my key".into(), ..Default::default() };
-        let pending = begin_login(&cfg).unwrap();
+        let account = DropboxAccount { app_key: "my key".into() };
+        let pending = begin_login(&account).unwrap();
         assert!((43..=128).contains(&pending.verifier.len()));
         assert!(pending.url.starts_with("https://www.dropbox.com/oauth2/authorize?client_id=my%20key&"));
-        assert!(pending.url.contains(&format!("code_challenge={}&", challenge(&pending.verifier))));
+        assert!(pending.url.contains(&format!("code_challenge={}&", pkce_challenge(&pending.verifier))));
         assert!(pending.url.ends_with("&token_access_type=offline"));
     }
 
     #[test]
     fn begin_login_requires_app_key() {
-        let err = begin_login(&DropboxConfig::default()).unwrap_err().to_string();
+        let err = begin_login(&DropboxAccount::default()).unwrap_err().to_string();
         assert!(err.contains("app key"), "{err}");
     }
 

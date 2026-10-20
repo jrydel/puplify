@@ -8,7 +8,9 @@ use crate::transcript::{Segment, Transcript};
 
 pub mod dropbox;
 pub mod folder;
+pub mod google;
 pub mod google_drive;
+pub mod microsoft;
 pub mod notion;
 pub mod oauth;
 pub mod onedrive;
@@ -34,6 +36,7 @@ impl DeliveryResult {
 /// Sends a finished transcript to every enabled connector concurrently.
 pub async fn deliver(cfg: &Config, transcript: &Transcript) -> Vec<DeliveryResult> {
     let c = &cfg.connectors;
+    let a = &cfg.accounts;
     let mut tasks: Vec<futures_util::future::BoxFuture<'_, DeliveryResult>> = Vec::new();
     if c.folder.enabled {
         tasks.push(Box::pin(async {
@@ -42,17 +45,17 @@ pub async fn deliver(cfg: &Config, transcript: &Transcript) -> Vec<DeliveryResul
     }
     if c.onedrive.enabled {
         tasks.push(Box::pin(async {
-            DeliveryResult::from("onedrive".into(), onedrive::export(&c.onedrive, transcript).await)
+            DeliveryResult::from("onedrive".into(), onedrive::export(&c.onedrive, &a.microsoft, transcript).await)
         }));
     }
     if c.google_drive.enabled {
         tasks.push(Box::pin(async {
-            DeliveryResult::from("google-drive".into(), google_drive::export(&c.google_drive, transcript).await)
+            DeliveryResult::from("google-drive".into(), google_drive::export(&c.google_drive, &a.google, transcript).await)
         }));
     }
     if c.dropbox.enabled {
         tasks.push(Box::pin(async {
-            DeliveryResult::from("dropbox".into(), dropbox::export(&c.dropbox, transcript).await)
+            DeliveryResult::from("dropbox".into(), dropbox::export(&c.dropbox, &a.dropbox, transcript).await)
         }));
     }
     if c.notion.enabled {

@@ -3,6 +3,7 @@
 //! the Tauri desktop app.
 
 pub mod audio;
+pub mod calendar;
 pub mod config;
 pub mod connectors;
 pub mod paths;

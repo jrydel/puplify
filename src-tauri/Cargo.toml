@@ -19,6 +19,8 @@ tracing-subscriber.workspace = true
 tracing.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+chrono.workspace = true
 
 [features]
 metal = ["puplify-core/metal"]

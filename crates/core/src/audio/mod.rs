@@ -13,6 +13,8 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{config::CaptureConfig, transcript::Speaker};
 
+pub mod activity;
+
 mod resample;
 pub use resample::Resampler;
 

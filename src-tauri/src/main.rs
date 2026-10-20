@@ -1,18 +1,24 @@
 // Prevents an extra console window on Windows release builds; harmless elsewhere.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autopilot;
+mod recorder;
+
 use puplify_core::{
     audio::{self, DeviceInfo},
+    calendar,
     config::Config,
-    connectors::{self, dropbox, google_drive, onedrive, webhook, DeliveryResult},
-    session::{Recording, SessionEvent},
+    connectors::{self, dropbox, google, microsoft, webhook, DeliveryResult},
     store::{self, TranscriptSummary},
     stt::models::{self, ModelStatus},
     Transcript,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::{mpsc, Mutex};
+use tauri_plugin_opener::OpenerExt;
+
+use autopilot::CalendarSnapshot;
+use recorder::{AppState, Origin, RecordingInfo};
 
 /// Errors cross the IPC boundary as display strings.
 type CmdResult<T> = Result<T, String>;
@@ -23,17 +29,6 @@ fn err(e: impl std::fmt::Display) -> String {
 
 fn anyhow_err(e: anyhow::Error) -> String {
     format!("{e:#}")
-}
-
-#[derive(Default)]
-struct AppState {
-    recording: Mutex<Option<Recording>>,
-}
-
-#[derive(Clone, Serialize)]
-struct RecordingInfo {
-    transcript_id: String,
-    title: String,
 }
 
 #[derive(Serialize)]
@@ -49,22 +44,13 @@ struct ModelProgress {
     total: Option<u64>,
 }
 
-/// Outcome of a background sign-in, emitted as the `account-login` event.
+/// Outcome of a background Microsoft sign-in, emitted as `account-login`.
 #[derive(Clone, Serialize)]
 struct LoginResult {
     provider: &'static str,
     ok: bool,
     account: Option<String>,
     error: Option<String>,
-}
-
-impl LoginResult {
-    fn from(provider: &'static str, result: anyhow::Result<String>) -> Self {
-        match result {
-            Ok(account) => Self { provider, ok: true, account: Some(account), error: None },
-            Err(e) => Self { provider, ok: false, account: None, error: Some(format!("{e:#}")) },
-        }
-    }
 }
 
 /// Code the user enters on the provider's sign-in page.
@@ -91,42 +77,41 @@ async fn list_devices() -> CmdResult<Vec<DeviceInfo>> {
 }
 
 #[tauri::command]
-async fn recording_status(state: State<'_, AppState>) -> CmdResult<Option<RecordingInfo>> {
-    let guard = state.recording.lock().await;
-    Ok(guard.as_ref().map(|r| RecordingInfo { transcript_id: r.transcript_id.clone(), title: r.title.clone() }))
+async fn recording_status(app: AppHandle) -> CmdResult<Option<RecordingInfo>> {
+    Ok(recorder::status(&app).await)
 }
 
 #[tauri::command]
-async fn start_recording(app: AppHandle, state: State<'_, AppState>, title: String) -> CmdResult<RecordingInfo> {
-    let mut guard = state.recording.lock().await;
-    if guard.is_some() {
-        return Err("already recording".into());
-    }
-    let cfg = Config::load().map_err(anyhow_err)?;
-    let (tx, mut rx) = mpsc::unbounded_channel::<SessionEvent>();
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            let _ = app.emit("session", event);
-        }
-    });
-    let recording = Recording::start(cfg, title, tx).await.map_err(anyhow_err)?;
-    let info = RecordingInfo { transcript_id: recording.transcript_id.clone(), title: recording.title.clone() };
-    *guard = Some(recording);
-    Ok(info)
+async fn start_recording(app: AppHandle, title: String) -> CmdResult<RecordingInfo> {
+    recorder::start(&app, title, Origin::Manual).await.map_err(anyhow_err)
+}
+
+/// Starts recording the meeting the autopilot offered in Ask mode, so it
+/// stops automatically like an automatic recording.
+#[tauri::command]
+async fn record_offered_meeting(app: AppHandle, state: State<'_, AppState>) -> CmdResult<RecordingInfo> {
+    let meeting = state.offered.lock().await.take().ok_or("that meeting is no longer on offer")?;
+    recorder::start(&app, meeting.title.clone(), Origin::Calendar(meeting)).await.map_err(anyhow_err)
+}
+
+#[tauri::command]
+async fn dismiss_offered_meeting(state: State<'_, AppState>) -> CmdResult<()> {
+    state.offered.lock().await.take();
+    Ok(())
 }
 
 /// Stops capture and returns immediately; completion and connector results
 /// arrive as `session` events.
 #[tauri::command]
-async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
-    let Some(recording) = state.recording.lock().await.take() else {
-        return Ok(());
-    };
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = recording.stop().await {
-            let _ = app.emit("session", SessionEvent::Error { message: format!("{e:#}") });
-        }
-    });
+async fn stop_recording(app: AppHandle) -> CmdResult<()> {
+    recorder::stop(&app).await;
+    Ok(())
+}
+
+async fn ensure_not_recording(state: &AppState, id: &str, action: &str) -> CmdResult<()> {
+    if state.active.lock().await.as_ref().is_some_and(|a| a.recording.transcript_id == id) {
+        return Err(format!("cannot {action} while recording"));
+    }
     Ok(())
 }
 
@@ -144,9 +129,7 @@ fn get_transcript(id: String) -> CmdResult<TranscriptView> {
 
 #[tauri::command]
 async fn rename_transcript(state: State<'_, AppState>, id: String, title: String) -> CmdResult<()> {
-    if state.recording.lock().await.as_ref().is_some_and(|r| r.transcript_id == id) {
-        return Err("cannot rename while recording".into());
-    }
+    ensure_not_recording(&state, &id, "rename").await?;
     let title = title.trim();
     if title.is_empty() {
         return Err("title cannot be empty".into());
@@ -158,9 +141,7 @@ async fn rename_transcript(state: State<'_, AppState>, id: String, title: String
 
 #[tauri::command]
 async fn delete_transcript(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    if state.recording.lock().await.as_ref().is_some_and(|r| r.transcript_id == id) {
-        return Err("cannot delete while recording".into());
-    }
+    ensure_not_recording(&state, &id, "delete").await?;
     store::delete(&id).map_err(anyhow_err)
 }
 
@@ -170,7 +151,7 @@ async fn deliver_transcript(id: String) -> CmdResult<Vec<DeliveryResult>> {
     let t = store::load(&id).map_err(anyhow_err)?;
     let results = connectors::deliver(&cfg, &t).await;
     if results.is_empty() {
-        return Err("no connectors are enabled".into());
+        return Err("no destinations are turned on".into());
     }
     Ok(results)
 }
@@ -197,57 +178,57 @@ async fn download_model(app: AppHandle, name: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-fn onedrive_status() -> CmdResult<Option<String>> {
-    onedrive::status().map_err(anyhow_err)
+fn microsoft_status() -> CmdResult<Option<String>> {
+    microsoft::status().map_err(anyhow_err)
 }
 
 /// Starts device-code sign-in; the outcome arrives as an `account-login` event.
 #[tauri::command]
-async fn onedrive_login(app: AppHandle) -> CmdResult<DeviceLogin> {
-    let cfg = Config::load().map_err(anyhow_err)?.connectors.onedrive;
-    let code = onedrive::begin_login(&cfg).await.map_err(anyhow_err)?;
+async fn microsoft_login(app: AppHandle) -> CmdResult<DeviceLogin> {
+    let cfg = Config::load().map_err(anyhow_err)?.accounts.microsoft;
+    let code = microsoft::begin_login(&cfg).await.map_err(anyhow_err)?;
     let view = DeviceLogin {
         user_code: code.user_code.clone(),
         verification_uri: code.verification_uri.clone(),
         expires_in: code.expires_in,
     };
     tauri::async_runtime::spawn(async move {
-        let result = onedrive::finish_login(&cfg, &code).await;
-        let _ = app.emit("account-login", LoginResult::from("onedrive", result));
+        let result = match microsoft::finish_login(&cfg, &code).await {
+            Ok(account) => LoginResult { provider: "microsoft", ok: true, account: Some(account), error: None },
+            Err(e) => LoginResult { provider: "microsoft", ok: false, account: None, error: Some(format!("{e:#}")) },
+        };
+        let _ = app.emit("account-login", result);
     });
     Ok(view)
 }
 
 #[tauri::command]
-fn onedrive_logout() -> CmdResult<()> {
-    onedrive::logout().map_err(anyhow_err)
+fn microsoft_logout() -> CmdResult<()> {
+    microsoft::logout().map_err(anyhow_err)
 }
 
 #[tauri::command]
-fn gdrive_status() -> CmdResult<Option<String>> {
-    google_drive::status().map_err(anyhow_err)
+fn google_status() -> CmdResult<Option<String>> {
+    google::status().map_err(anyhow_err)
 }
 
-/// Starts device-code sign-in; the outcome arrives as an `account-login` event.
+/// Opens Google's sign-in page in the browser and waits for the redirect
+/// back to Puplify (up to five minutes). Returns the account email.
 #[tauri::command]
-async fn gdrive_login(app: AppHandle) -> CmdResult<DeviceLogin> {
-    let cfg = Config::load().map_err(anyhow_err)?.connectors.google_drive;
-    let code = google_drive::begin_login(&cfg).await.map_err(anyhow_err)?;
-    let view = DeviceLogin {
-        user_code: code.user_code.clone(),
-        verification_uri: code.verification_uri.clone(),
-        expires_in: code.expires_in,
-    };
-    tauri::async_runtime::spawn(async move {
-        let result = google_drive::finish_login(&cfg, &code).await;
-        let _ = app.emit("account-login", LoginResult::from("google_drive", result));
-    });
-    Ok(view)
+async fn google_login(app: AppHandle) -> CmdResult<String> {
+    let cfg = Config::load().map_err(anyhow_err)?.accounts.google;
+    google::login(&cfg, move |url| {
+        if let Err(e) = app.opener().open_url(url, None::<&str>) {
+            tracing::warn!("opening the browser: {e}");
+        }
+    })
+    .await
+    .map_err(anyhow_err)
 }
 
 #[tauri::command]
-fn gdrive_logout() -> CmdResult<()> {
-    google_drive::logout().map_err(anyhow_err)
+fn google_logout() -> CmdResult<()> {
+    google::logout().map_err(anyhow_err)
 }
 
 #[tauri::command]
@@ -258,19 +239,29 @@ fn dropbox_status() -> CmdResult<Option<String>> {
 /// Returns the authorization URL and PKCE verifier; the user pastes back the code.
 #[tauri::command]
 fn dropbox_begin_login() -> CmdResult<dropbox::PendingLogin> {
-    let cfg = Config::load().map_err(anyhow_err)?.connectors.dropbox;
+    let cfg = Config::load().map_err(anyhow_err)?.accounts.dropbox;
     dropbox::begin_login(&cfg).map_err(anyhow_err)
 }
 
 #[tauri::command]
 async fn dropbox_finish_login(verifier: String, code: String) -> CmdResult<String> {
-    let cfg = Config::load().map_err(anyhow_err)?.connectors.dropbox;
+    let cfg = Config::load().map_err(anyhow_err)?.accounts.dropbox;
     dropbox::finish_login(&cfg, &verifier, code.trim()).await.map_err(anyhow_err)
 }
 
 #[tauri::command]
 fn dropbox_logout() -> CmdResult<()> {
     dropbox::logout().map_err(anyhow_err)
+}
+
+/// Online meetings from the enabled calendars, read now (the autopilot
+/// refreshes its own copy every minute and emits `calendar`).
+#[tauri::command]
+async fn upcoming_meetings() -> CmdResult<CalendarSnapshot> {
+    let cfg = Config::load().map_err(anyhow_err)?;
+    let (meetings, warnings) =
+        calendar::upcoming(&cfg, chrono::Duration::hours(autopilot::AHEAD_HOURS)).await;
+    Ok(CalendarSnapshot { meetings, warnings })
 }
 
 #[tauri::command]
@@ -289,6 +280,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
         .setup(|app| {
             // Whisper + VAD models shipped inside the bundle (see bundle.resources).
@@ -296,6 +288,7 @@ fn main() {
                 Ok(dir) => models::set_bundled_dir(dir.join("models")),
                 Err(e) => tracing::warn!("no resource dir; bundled models unavailable: {e}"),
             }
+            autopilot::spawn(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -304,6 +297,8 @@ fn main() {
             list_devices,
             recording_status,
             start_recording,
+            record_offered_meeting,
+            dismiss_offered_meeting,
             stop_recording,
             list_transcripts,
             get_transcript,
@@ -312,16 +307,17 @@ fn main() {
             deliver_transcript,
             list_models,
             download_model,
-            onedrive_status,
-            onedrive_login,
-            onedrive_logout,
-            gdrive_status,
-            gdrive_login,
-            gdrive_logout,
+            microsoft_status,
+            microsoft_login,
+            microsoft_logout,
+            google_status,
+            google_login,
+            google_logout,
             dropbox_status,
             dropbox_begin_login,
             dropbox_finish_login,
             dropbox_logout,
+            upcoming_meetings,
             test_webhook,
         ])
         .run(tauri::generate_context!())

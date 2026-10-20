@@ -2,7 +2,21 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { api, errorText, onSession, type Config, type TranscriptSummary } from "@/lib/api";
+import { MeetingPrompt } from "@/components/meeting-prompt";
+import {
+  api,
+  errorText,
+  onCalendar,
+  onMeetingPrompt,
+  onRecordingStarted,
+  onRecordingStopped,
+  onSession,
+  type CalendarSnapshot,
+  type Config,
+  type Meeting,
+  type RecordingInfo,
+  type TranscriptSummary,
+} from "@/lib/api";
 import { initialSession, sessionReducer } from "@/lib/session";
 import { RecorderView } from "@/views/recorder-view";
 import { SettingsView } from "@/views/settings-view";
@@ -14,44 +28,82 @@ export default function App() {
   const [view, setView] = useState<View>({ kind: "record" });
   const [history, setHistory] = useState<TranscriptSummary[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
+  const [calendar, setCalendar] = useState<CalendarSnapshot | null>(null);
+  const [offer, setOffer] = useState<Meeting | null>(null);
   const [session, dispatch] = useReducer(sessionReducer, initialSession);
-  const phase = useRef(session.phase);
-  phase.current = session.phase;
+  const current = useRef(session);
+  current.current = session;
 
   const refreshHistory = useCallback(() => {
     api.listTranscripts().then(setHistory).catch((e) => toast.error(errorText(e)));
   }, []);
 
-  useEffect(() => {
-    refreshHistory();
-    api.getConfig().then(setConfig).catch((e) => toast.error(errorText(e)));
-    // The window may have been reloaded while a recording was running.
-    api.recordingStatus().then((active) => {
-      if (active) dispatch({ type: "recording", transcriptId: active.transcript_id, title: active.title, startedAt: Date.now() });
+  /** Follows a recording whether the user, the calendar or a reload started it. */
+  const follow = useCallback((info: RecordingInfo) => {
+    const s = current.current;
+    if (s.phase === "recording" && s.transcriptId === info.transcript_id) return;
+    dispatch({ type: "starting", title: info.title });
+    dispatch({
+      type: "recording",
+      transcriptId: info.transcript_id,
+      title: info.title,
+      startedAt: Date.now(),
+      meeting: info.meeting,
     });
-  }, [refreshHistory]);
+  }, []);
+
+  const refreshCalendar = useCallback((cfg: Config) => {
+    const enabled = cfg.calendar.mode !== "off" && (cfg.calendar.google || cfg.calendar.microsoft);
+    if (!enabled) return setCalendar(null);
+    api.upcomingMeetings().then(setCalendar).catch((e) => toast.error(errorText(e)));
+  }, []);
 
   useEffect(() => {
-    const off = onSession((event) => {
-      dispatch({ type: "event", event });
-      if (event.type === "error") toast.error(event.message);
-      if (event.type === "finished") {
-        // Transcription can end on its own (e.g. the cloud stream dropped); release the recorder.
-        if (phase.current === "recording") api.stopRecording().catch((e) => toast.error(errorText(e)));
+    refreshHistory();
+    api
+      .getConfig()
+      .then((cfg) => {
+        setConfig(cfg);
+        refreshCalendar(cfg);
+      })
+      .catch((e) => toast.error(errorText(e)));
+    api.recordingStatus().then((active) => active && follow(active));
+  }, [refreshHistory, refreshCalendar, follow]);
+
+  useEffect(() => {
+    const offs = [
+      onSession((event) => {
+        dispatch({ type: "event", event });
+        if (event.type === "error") toast.error(event.message);
+        if (event.type === "finished") {
+          // Transcription can end on its own (e.g. the cloud stream dropped); release the recorder.
+          if (current.current.phase === "recording") api.stopRecording().catch((e) => toast.error(errorText(e)));
+          refreshHistory();
+        }
+        if (event.type === "done") refreshHistory();
+      }),
+      onRecordingStarted((info) => {
+        follow(info);
         refreshHistory();
-      }
-      if (event.type === "done") refreshHistory();
-    });
+        setOffer(null);
+        if (info.meeting) toast.info(`Recording “${info.title}” from your calendar`);
+      }),
+      onRecordingStopped((id) => {
+        const s = current.current;
+        if (s.phase === "recording" && s.transcriptId === id) dispatch({ type: "stopping" });
+      }),
+      onMeetingPrompt(setOffer),
+      onCalendar(setCalendar),
+    ];
     return () => {
-      off.then((f) => f());
+      for (const off of offs) off.then((f) => f());
     };
-  }, [refreshHistory]);
+  }, [refreshHistory, follow]);
 
   async function start(title: string) {
     dispatch({ type: "starting", title: title.trim() || "Untitled meeting" });
     try {
-      const info = await api.startRecording(title);
-      dispatch({ type: "recording", transcriptId: info.transcript_id, title: info.title, startedAt: Date.now() });
+      follow(await api.startRecording(title));
       refreshHistory();
     } catch (e) {
       dispatch({ type: "start-failed" });
@@ -96,6 +148,7 @@ export default function App() {
           <RecorderView
             session={session}
             config={config}
+            calendar={calendar}
             onStart={start}
             onStop={stop}
             onNew={() => dispatch({ type: "reset" })}
@@ -114,8 +167,31 @@ export default function App() {
             }}
           />
         )}
-        {view.kind === "settings" && <SettingsView onSaved={setConfig} />}
+        {view.kind === "settings" && (
+          <SettingsView
+            onSaved={(cfg) => {
+              setConfig(cfg);
+              refreshCalendar(cfg);
+            }}
+          />
+        )}
       </main>
+      <MeetingPrompt
+        meeting={offer}
+        onRecord={async () => {
+          setOffer(null);
+          try {
+            follow(await api.recordOfferedMeeting());
+            setView({ kind: "record" });
+          } catch (e) {
+            toast.error(errorText(e));
+          }
+        }}
+        onDismiss={() => {
+          setOffer(null);
+          api.dismissOfferedMeeting().catch(() => {});
+        }}
+      />
     </div>
   );
 }

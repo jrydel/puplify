@@ -4,7 +4,9 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::paths;
 
@@ -55,4 +57,47 @@ pub async fn http_error(resp: reqwest::Response) -> String {
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
     format!("HTTP {}: {}", status.as_u16(), body.chars().take(300).collect::<String>())
+}
+
+/// Successful response of a token endpoint (authorization-code, device-code and refresh grants).
+#[derive(Deserialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_in: i64,
+    /// OpenID Connect identity token, when the `openid` scope was granted.
+    pub id_token: Option<String>,
+    /// Space-separated scopes actually granted (users can untick some on Google's consent screen).
+    pub scope: Option<String>,
+}
+
+/// Fresh PKCE code verifier: 64 hex characters from two random UUIDs (244 bits
+/// of entropy, within RFC 7636's 43..=128 unreserved characters).
+pub fn pkce_verifier() -> String {
+    format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple())
+}
+
+/// S256 code challenge: base64url (no padding) of the SHA-256 of the verifier.
+pub fn pkce_challenge(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pkce_challenge_matches_rfc7636_appendix_b() {
+        assert_eq!(
+            pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
+    }
+
+    #[test]
+    fn generated_verifier_is_within_rfc_length() {
+        let v = pkce_verifier();
+        assert!((43..=128).contains(&v.len()));
+        assert_ne!(v, pkce_verifier());
+    }
 }

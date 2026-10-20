@@ -66,12 +66,14 @@ impl WhisperEngine {
             };
             // BTreeMap: deterministic flush order at the end.
             let mut chunkers: BTreeMap<Speaker, Chunker> = BTreeMap::new();
+            let mut votes: BTreeMap<Speaker, LanguageVote> = BTreeMap::new();
             while let Some(msg) = audio.blocking_recv() {
                 match msg {
                     AudioMsg::Frame { speaker, samples } => {
                         let chunker = chunkers.entry(speaker).or_default();
                         for chunk in chunker.push(&samples) {
-                            self.transcribe(&mut state, speaker, chunk, &events);
+                            let vote = votes.entry(speaker).or_default();
+                            self.transcribe(&mut state, speaker, chunk, vote, &events);
                         }
                     }
                     AudioMsg::Error { speaker, message } => {
@@ -83,10 +85,27 @@ impl WhisperEngine {
             }
             for (speaker, chunker) in &mut chunkers {
                 if let Some(chunk) = chunker.flush() {
-                    self.transcribe(&mut state, *speaker, chunk, &events);
+                    let vote = votes.entry(*speaker).or_default();
+                    self.transcribe(&mut state, *speaker, chunk, vote, &events);
                 }
             }
         })
+    }
+
+    /// With language `auto`, detects the language of this utterance and folds
+    /// it into the speaker's running vote; returns the leading language.
+    fn vote_language(&self, state: &mut WhisperState, samples: &[f32], vote: &mut LanguageVote) -> Option<&'static str> {
+        let threads = self.threads.max(1) as usize;
+        state.pcm_to_mel(samples, threads).ok()?;
+        let (detected, probs) = state.lang_detect(0, threads).ok()?;
+        let leader = vote.add(&probs, samples.len() as f32 / SAMPLE_RATE as f32);
+        tracing::debug!(
+            utterance = whisper_rs::get_lang_str(detected),
+            p = probs.get(detected as usize).copied().unwrap_or_default(),
+            leader = whisper_rs::get_lang_str(leader as i32),
+            "whisper language vote"
+        );
+        whisper_rs::get_lang_str(leader as i32)
     }
 
     fn transcribe(
@@ -94,6 +113,7 @@ impl WhisperEngine {
         state: &mut WhisperState,
         speaker: Speaker,
         chunk: Chunk,
+        vote: &mut LanguageVote,
         events: &UnboundedSender<SttEvent>,
     ) {
         let mut samples = chunk.samples;
@@ -102,9 +122,13 @@ impl WhisperEngine {
         if samples.len() < min_len {
             samples.resize(min_len, 0.0);
         }
+        let language = match self.language.as_str() {
+            "auto" => self.vote_language(state, &samples, vote).unwrap_or("auto"),
+            fixed => fixed,
+        };
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_n_threads(self.threads);
-        params.set_language(Some(&self.language));
+        params.set_language(Some(language));
         params.set_translate(false);
         params.set_no_context(true);
         params.set_suppress_blank(true);
@@ -155,6 +179,28 @@ fn is_non_speech(text: &str) -> bool {
         || bracketed('(', ')')
         || bracketed('*', '*')
         || !text.chars().any(char::is_alphanumeric)
+}
+
+/// Running language estimate for one speaker when the language is `auto`:
+/// whisper's per-utterance probabilities summed, weighted by duration. Short
+/// utterances on their own are often misdetected (Czech as Polish or
+/// Russian, noise as Japanese); the running total stays on the real language.
+#[derive(Default)]
+pub(crate) struct LanguageVote {
+    totals: Vec<f32>,
+}
+
+impl LanguageVote {
+    /// Adds one utterance and returns the index of the leading language.
+    pub fn add(&mut self, probs: &[f32], seconds: f32) -> usize {
+        if self.totals.len() != probs.len() {
+            self.totals = vec![0.0; probs.len()];
+        }
+        for (total, p) in self.totals.iter_mut().zip(probs) {
+            *total += p * seconds;
+        }
+        self.totals.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map_or(0, |(i, _)| i)
+    }
 }
 
 pub(crate) struct Chunk {
@@ -270,6 +316,20 @@ impl Chunker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_vote_keeps_the_established_language() {
+        // Index 0 = cs, 1 = pl, 2 = ja.
+        let mut vote = LanguageVote::default();
+        assert_eq!(vote.add(&[0.7, 0.25, 0.05], 8.0), 0, "first utterance decides at first");
+        assert_eq!(vote.add(&[0.2, 0.7, 0.1], 2.0), 0, "a short misdetected utterance doesn't flip it");
+        assert_eq!(vote.add(&[0.1, 0.1, 0.8], 1.5), 0, "nor does a burst of noise");
+        // Enough sustained evidence does switch, e.g. the meeting changes language.
+        for _ in 0..6 {
+            vote.add(&[0.05, 0.9, 0.05], 6.0);
+        }
+        assert_eq!(vote.add(&[0.05, 0.9, 0.05], 6.0), 1);
+    }
 
     fn tone(seconds: f32, amp: f32) -> Vec<f32> {
         let n = (SAMPLE_RATE as f32 * seconds) as usize;

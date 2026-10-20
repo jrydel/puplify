@@ -1,4 +1,4 @@
-import type { DeliveryResult, Segment, SessionEvent, Speaker } from "./api";
+import type { DeliveryResult, Meeting, Segment, SessionEvent, Speaker } from "./api";
 import { insertSorted } from "./format";
 
 export type Phase = "idle" | "starting" | "recording" | "finishing" | "done";
@@ -14,6 +14,8 @@ export interface SessionState {
   partials: Partial<Record<Speaker, string>>;
   levels: Record<Speaker, number>;
   deliveries: DeliveryResult[];
+  /** Calendar meeting that triggered this recording, if any. */
+  meeting: Meeting | null;
 }
 
 export const initialSession: SessionState = {
@@ -27,13 +29,14 @@ export const initialSession: SessionState = {
   partials: {},
   levels: { me: 0, them: 0 },
   deliveries: [],
+  meeting: null,
 };
 
 export type SessionAction =
   | { type: "reset" }
   | { type: "starting"; title: string }
   | { type: "start-failed" }
-  | { type: "recording"; transcriptId: string; title: string; startedAt: number }
+  | { type: "recording"; transcriptId: string; title: string; startedAt: number; meeting?: Meeting | null }
   | { type: "stopping" }
   | { type: "event"; event: SessionEvent };
 
@@ -52,6 +55,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         transcriptId: action.transcriptId,
         title: action.title,
         startedAt: action.startedAt,
+        meeting: action.meeting ?? state.meeting,
       };
     case "stopping":
       return { ...state, phase: "finishing", stoppedAt: Date.now(), levels: { me: 0, them: 0 } };

@@ -13,7 +13,72 @@ use crate::paths;
 pub struct Config {
     pub capture: CaptureConfig,
     pub stt: SttConfig,
+    pub accounts: AccountsConfig,
+    pub calendar: CalendarConfig,
     pub connectors: ConnectorsConfig,
+}
+
+/// Sign-in settings for the cloud accounts Puplify can connect to. One
+/// account serves every feature that needs it (e.g. Microsoft: OneDrive
+/// export and calendar).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct AccountsConfig {
+    pub microsoft: MicrosoftAccount,
+    pub google: GoogleAccount,
+    pub dropbox: DropboxAccount,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct MicrosoftAccount {
+    /// Application (client) ID of your Microsoft Entra app registration.
+    pub client_id: String,
+    /// `common` accepts both personal and work/school accounts.
+    pub tenant: String,
+}
+
+impl Default for MicrosoftAccount {
+    fn default() -> Self {
+        Self { client_id: String::new(), tenant: "common".into() }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct GoogleAccount {
+    /// OAuth client ID of type "Desktop app".
+    pub client_id: String,
+    /// Google requires the client secret in token requests, even for desktop apps.
+    pub client_secret: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct DropboxAccount {
+    /// App key from the Dropbox App Console.
+    pub app_key: String,
+}
+
+/// What to do when an online meeting is in progress and another app starts using the microphone.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AutoRecord {
+    Off,
+    Ask,
+    #[default]
+    Auto,
+}
+
+/// Calendar-driven recording: which calendars to watch and how to react.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CalendarConfig {
+    pub mode: AutoRecord,
+    /// Watch the connected Google calendar.
+    pub google: bool,
+    /// Watch the connected Microsoft calendar.
+    pub microsoft: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -165,10 +230,6 @@ impl Default for FolderConfig {
 #[serde(default)]
 pub struct OneDriveConfig {
     pub enabled: bool,
-    /// Application (client) ID of your Microsoft Entra app registration.
-    pub client_id: String,
-    /// `common` accepts both personal and work/school accounts.
-    pub tenant: String,
     /// Destination folder path relative to the drive root.
     pub folder: String,
     pub formats: Vec<ExportFormat>,
@@ -178,8 +239,6 @@ impl Default for OneDriveConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            client_id: String::new(),
-            tenant: "common".into(),
             folder: "Transcripts".into(),
             formats: default_formats(),
         }
@@ -191,10 +250,6 @@ impl Default for OneDriveConfig {
 #[serde(default)]
 pub struct GoogleDriveConfig {
     pub enabled: bool,
-    /// OAuth client ID of type "TVs and Limited Input devices".
-    pub client_id: String,
-    /// Google requires the client secret in token requests, even for this client type.
-    pub client_secret: String,
     /// Folder name in My Drive; created on first use.
     pub folder: String,
     pub formats: Vec<ExportFormat>,
@@ -204,8 +259,6 @@ impl Default for GoogleDriveConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            client_id: String::new(),
-            client_secret: String::new(),
             folder: "Transcripts".into(),
             formats: default_formats(),
         }
@@ -217,8 +270,6 @@ impl Default for GoogleDriveConfig {
 #[serde(default)]
 pub struct DropboxConfig {
     pub enabled: bool,
-    /// App key from the Dropbox App Console.
-    pub app_key: String,
     /// Destination folder (relative to the app folder for app-folder apps).
     pub folder: String,
     pub formats: Vec<ExportFormat>,
@@ -228,7 +279,6 @@ impl Default for DropboxConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            app_key: String::new(),
             folder: "/Transcripts".into(),
             formats: default_formats(),
         }
@@ -308,5 +358,38 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let json = serde_json::to_vec_pretty(self)?;
         paths::write_atomic(&Self::path()?, &json, true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accounts_and_calendar_defaults() {
+        let cfg: Config = serde_json::from_str("{}").unwrap();
+        assert_eq!(cfg.accounts.microsoft.tenant, "common");
+        assert_eq!(cfg.calendar.mode, AutoRecord::Auto);
+        assert!(!cfg.calendar.google && !cfg.calendar.microsoft);
+        assert_eq!(cfg.connectors.onedrive.folder, "Transcripts");
+    }
+
+    #[test]
+    fn partial_account_sections_keep_other_defaults() {
+        let cfg: Config = serde_json::from_str(
+            r#"{ "accounts": { "google": { "client_id": "id" } },
+                 "calendar": { "mode": "ask", "microsoft": true },
+                 "connectors": { "dropbox": { "enabled": true } } }"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.accounts.google.client_id, "id");
+        assert_eq!(cfg.accounts.google.client_secret, "");
+        assert_eq!(cfg.accounts.microsoft, MicrosoftAccount::default());
+        assert_eq!(cfg.calendar.mode, AutoRecord::Ask);
+        assert!(cfg.calendar.microsoft);
+        assert!(cfg.connectors.dropbox.enabled);
+        assert_eq!(cfg.connectors.dropbox.folder, "/Transcripts");
+        let json = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(json["calendar"]["mode"], "ask");
     }
 }

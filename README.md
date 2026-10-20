@@ -139,17 +139,21 @@ Accelerate framework; the `metal` feature currently fails to link (missing clang
    - **Deepgram**: paste an API key from <https://console.deepgram.com>.
 2. **Audio**: keep both sources on. Wear headphones if you can; otherwise the mic also picks up the
    other people from your speakers, and their words show up twice (once as Me).
-3. **Destinations**: turn on where finished transcripts should go (setup for each below).
+3. **Accounts, Destinations, Calendar**: connect the accounts you use in **Settings → Accounts**,
+   turn on where finished transcripts should go in **Settings → Destinations**, and optionally
+   enable [calendar auto-recording](#calendar-auto-recording) in **Settings → Calendar** (setup for
+   each below).
 4. Click **New recording → Start recording**. The meters show both sources are live. Click
    **Stop** when the meeting ends; the transcript is saved and then sent to every destination.
 
 On macOS the first recording triggers two permission prompts: Microphone, and Screen & System Audio
 Recording. After granting the second one, restart the app.
 
-## OneDrive setup
+## Microsoft setup (OneDrive and Outlook calendar)
 
-OneDrive access needs a Microsoft Entra app registration. It's free, takes about 3 minutes, and the
-app's client ID stays yours:
+One Microsoft sign-in serves both OneDrive export and the Outlook/Microsoft 365 calendar. It needs a
+Microsoft Entra app registration. It's free, takes about 3 minutes, and the app's client ID stays
+yours:
 
 1. Go to <https://entra.microsoft.com> → **App registrations** → **New registration**.
    - Name: `Puplify`
@@ -158,43 +162,55 @@ app's client ID stays yours:
    - Redirect URI: leave empty.
 2. Open the new app → **Authentication** → **Advanced settings** → set **Allow public client
    flows** to **Yes** → Save. This is required for device-code sign-in.
-3. **API permissions** → Add → Microsoft Graph → Delegated: `Files.ReadWrite`, `User.Read`,
-   `offline_access`. In work tenants that need it, an admin must grant consent.
+3. **API permissions** → Add → Microsoft Graph → Delegated: `Files.ReadWrite`, `Calendars.Read`,
+   `User.Read`, `offline_access`. In work tenants that need it, an admin must grant consent.
 4. Copy the **Application (client) ID** from **Overview**.
-5. In the app: **Settings → Destinations → OneDrive** → turn it on, paste the client ID →
-   **Connect OneDrive**. A browser page opens; enter the code shown in the app and approve.
-6. Choose a folder (default `Transcripts`) and file formats, then **Save changes**.
+5. In the app: **Settings → Accounts → Microsoft** → paste the client ID → **Connect Microsoft**.
+   A browser page opens; enter the code shown in the app and approve. From a terminal:
+   `puplify microsoft login`.
+6. To upload transcripts: **Settings → Destinations → OneDrive** → turn it on, choose a folder
+   (default `Transcripts`) and file formats, then **Save changes**. To use the calendar, see
+   [Calendar auto-recording](#calendar-auto-recording).
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending replaces the existing file. Tokens are
-stored in `onedrive-token.json` in the config directory (mode 0600) and refresh automatically.
+stored in `microsoft-token.json` in the config directory (mode 0600) and refresh automatically.
 
 Single-tenant only? Put your tenant ID or domain in **Tenant** instead of `common`.
 
-## Google Drive setup
+## Google setup (Drive and Calendar)
 
-Google Drive access needs your own OAuth client. It's free and takes about 5 minutes. Puplify only
-requests the `drive.file` scope, so it can see just the folder and files it creates, never the rest
-of your Drive:
+One Google sign-in serves both Google Drive export and Google Calendar. It needs your own OAuth
+client. It's free and takes about 5 minutes. For Drive, Puplify only requests the `drive.file`
+scope, so it can see just the folder and files it creates, never the rest of your Drive. For the
+calendar it requests `calendar.readonly`.
 
 1. Go to <https://console.cloud.google.com> and create a project (or pick an existing one).
-2. **APIs & Services → Library** → search **Google Drive API** → **Enable**.
+2. **APIs & Services → Library** → enable **Google Drive API** and **Google Calendar API**.
 3. **APIs & Services → OAuth consent screen** (Google Auth Platform → Branding/Audience): choose
    **External**, fill in the app name and your email, and add your own Google account as a **test
-   user**. In *Testing* mode Google expires the sign-in after 7 days; click **Publish app** to avoid
-   that (no review is needed for this scope).
+   user**. Under **Data Access** (scopes) add `.../auth/drive.file` and
+   `.../auth/calendar.readonly`.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → Application type
-   **TVs and Limited Input devices**.
-5. Copy the **Client ID** and **Client secret**. Google requires the secret even for this client
-   type; it is stored in `config.json` (mode 0600).
-6. In the app: **Settings → Destinations → Google Drive** → turn it on, paste both values →
-   **Connect Google Drive**. Enter the code shown on the Google page and approve. From a terminal:
-   `puplify gdrive login`.
-7. Choose a folder name (default `Transcripts`, created in My Drive on first use) and file formats,
-   then **Save changes**.
+   **Desktop app**.
+5. Copy the **Client ID** and **Client secret**. Google requires the secret even for desktop
+   apps; it is stored in `config.json` (mode 0600).
+6. In the app: **Settings → Accounts → Google** → paste both values → **Connect Google**. Your
+   browser opens Google's consent page and, after you approve, redirects to a temporary local
+   address (`http://127.0.0.1:<port>`) so Puplify can finish the sign-in; keep every permission
+   checkbox ticked. From a terminal: `puplify google login` (prints the URL and tries to open it).
+7. To upload transcripts: **Settings → Destinations → Google Drive** → turn it on, choose a folder
+   name (default `Transcripts`, created in My Drive on first use) and file formats, then **Save
+   changes**. To use the calendar, see [Calendar auto-recording](#calendar-auto-recording).
+
+Google treats `calendar.readonly` as a **sensitive scope**. While the consent screen is in *Testing*
+mode only the listed test users can sign in and Google expires the sign-in after 7 days (sign in
+again). Publishing the app removes the expiry, but until Google verifies it the consent page shows an
+"unverified app" warning (**Advanced → Go to … (unsafe)**); verification is only needed if other
+people will use your client.
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending updates the existing file instead of adding
-a copy. Tokens are stored in `google-drive-token.json` in the config directory (mode 0600) and
-refresh automatically.
+a copy. Tokens are stored in `google-token.json` in the config directory (mode 0600) and refresh
+automatically.
 
 ## Dropbox setup
 
@@ -206,14 +222,35 @@ app secret to keep:
    `Apps/`) or **Full Dropbox**. Name the app.
 3. **Permissions** tab: enable `files.content.write` and `account_info.read`, then **Submit**.
 4. **Settings** tab: copy the **App key**.
-5. In the app: **Settings → Destinations → Dropbox** → turn it on, paste the app key → **Connect
-   Dropbox**. Approve on the Dropbox page and paste the code it shows. From a terminal:
+5. In the app: **Settings → Accounts → Dropbox** → paste the app key → **Connect Dropbox**.
+   Approve on the Dropbox page and paste the code it shows. From a terminal:
    `puplify dropbox login`.
-6. Choose a folder (default `/Transcripts`) and file formats, then **Save changes**.
+6. **Settings → Destinations → Dropbox** → turn it on, choose a folder (default `/Transcripts`) and
+   file formats, then **Save changes**.
 
 Files are named `YYYY-MM-DD HHMM Title.txt`. Re-sending overwrites the existing file. With an App
 folder app, the folder is relative to it. Tokens are stored in `dropbox-token.json` in the config
 directory (mode 0600) and refresh automatically.
+
+## Calendar auto-recording
+
+Puplify can start recording by itself when you join an online meeting.
+
+1. Connect an account (**Settings → Accounts**, see the Microsoft and Google setup above).
+2. Open **Settings → Calendar** and turn on **Outlook calendar** and/or **Google Calendar**.
+3. Choose the mode: **Record automatically** (default) starts recording without asking, **Ask me**
+   shows a prompt first, **Off** disables the feature. **Check now** lists the online meetings it
+   sees in the next 12 hours.
+
+**Start:** an online meeting (an event with a Google Meet, Zoom, Teams or Webex link) is in
+progress on an enabled calendar **and** another application is using the microphone, i.e. you
+joined the call. Cancelled, declined and all-day events are ignored.
+
+**Stop:** when the meeting app releases the microphone (Linux and Windows), or when the event has
+ended and a minute has passed without speech (macOS, and on every OS as a fallback). macOS only
+reports that some process uses the default input, so Puplify's own capture can't be told apart.
+
+Recording other people may require their consent where you live; make sure participants know.
 
 ## Notion setup
 
@@ -281,9 +318,11 @@ puplify transcribe meeting.wav [--title T]     # any WAV file
 puplify list | show <id> [--format txt|md|json] | deliver <id> | delete <id>
 puplify devices                                # mic + monitor sources
 puplify models list | models download small.en
-puplify onedrive login | status | logout
-puplify gdrive login | status | logout
+puplify microsoft login | status | logout      # OneDrive + Outlook calendar
+puplify google login | status | logout         # Google Drive + Google Calendar
 puplify dropbox login | status | logout
+puplify calendar [--hours N]                   # upcoming online meetings (default 24 h)
+puplify mic-activity                           # is another app using the microphone?
 puplify webhook-test [name]
 puplify config                                 # path + current settings
 ```
